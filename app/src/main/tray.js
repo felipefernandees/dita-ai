@@ -5,7 +5,7 @@ function loadIcon() {
   const iconPath = app.isPackaged
     ? join(process.resourcesPath, 'trayTemplate.png')
     : join(__dirname, '../../resources/trayTemplate.png')
-  const img = nativeImage.createFromPath(iconPath)
+  const img = nativeImage.createFromPath(iconPath).resize({ width: 18, height: 18 })
   img.setTemplateImage(true)
   return img
 }

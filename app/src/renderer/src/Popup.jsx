@@ -3,10 +3,10 @@ import { useEffect, useRef, useState } from 'react'
 export default function Popup() {
   const [phase, setPhase] = useState('idle') // idle|recording|processing|done|error
   const [result, setResult] = useState('')
-  const [waveColor, setWaveColor] = useState('#f5f5f4')
+  const [waveColor, setWaveColor] = useState('#F4F2EC')
   const canvasRef = useRef(null)
   const mediaRef = useRef({})
-  const colorRef = useRef('#f5f5f4')
+  const colorRef = useRef('#F4F2EC')
 
   useEffect(() => {
     window.dita.onCommand(async (ch, payload) => {
@@ -69,7 +69,7 @@ export default function Popup() {
   async function startRecording() {
     releaseMic() // garante que nenhum stream anterior ficou aberto
     const settings = await window.dita.getSettings()
-    colorRef.current = settings.waveColor || '#f5f5f4'
+    colorRef.current = settings.waveColor || '#F4F2EC'
     setWaveColor(colorRef.current)
     const audio = settings.micDeviceId ? { deviceId: { exact: settings.micDeviceId } } : true
     let stream
@@ -113,9 +113,10 @@ export default function Popup() {
   }
 
   const pill = {
-    height: '100vh', width: '100vw', borderRadius: 999, background: '#141414',
+    height: '100vh', width: '100vw', borderRadius: 999, background: '#221C33',
     display: 'flex', alignItems: 'center', padding: '0 8px', gap: 7,
-    color: '#eee', fontFamily: 'system-ui', fontSize: 12, boxSizing: 'border-box'
+    color: '#F4F2EC', fontFamily: "'General Sans', ui-sans-serif, system-ui, sans-serif",
+    fontSize: 12, boxSizing: 'border-box', border: '1px solid #322B47'
   }
 
   if (phase === 'done') {
@@ -124,7 +125,7 @@ export default function Popup() {
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{result}</span>
         <button
           onClick={() => { window.dita.copyText(result); window.dita.closePopup() }}
-          style={{ background: '#3a3a3a', color: '#fff', border: 0, borderRadius: 999, padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 11 }}
+          style={{ background: '#ECFF77', color: '#0E0E0E', border: 0, borderRadius: 999, padding: '5px 11px', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 11, fontWeight: 600, fontFamily: "'General Sans', system-ui" }}
         >Copiar Ditado</button>
       </div>
     )
@@ -142,7 +143,7 @@ export default function Popup() {
     <div style={pill}>
       <button
         onClick={() => window.dita.closePopup()}
-        style={{ background: '#2a2a2a', color: '#bbb', border: 0, borderRadius: '50%', width: 20, height: 20, cursor: 'pointer', fontSize: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+        style={{ background: '#2C2542', color: '#A8A4B5', border: 0, borderRadius: '50%', width: 20, height: 20, cursor: 'pointer', fontSize: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
       >✕</button>
       {phase === 'processing'
         ? <span style={{ flex: 1, textAlign: 'center', color: '#aaa' }}>Transcrevendo…</span>

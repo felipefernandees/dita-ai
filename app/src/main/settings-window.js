@@ -17,7 +17,7 @@ export function openSettingsWindow() {
     title: 'Dita Aí',
     resizable: true,
     fullscreenable: false,
-    backgroundColor: '#f3f1ea',
+    backgroundColor: '#16121F',
     webPreferences: { preload: join(__dirname, '../preload/index.js') }
   })
   win.setMenuBarVisibility(false)
