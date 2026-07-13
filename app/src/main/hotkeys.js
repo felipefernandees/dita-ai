@@ -48,8 +48,8 @@ export function createHotkeyMachine({ onStart, onStop, onCancel, now = () => Dat
   }
 }
 
-export function startHotkeys({ helperPath, machine, onNoPermission = () => {} }) {
-  const proc = spawn(helperPath, [], { stdio: ['pipe', 'pipe', 'inherit'] })
+export function startHotkeys({ helperPath, args = [], machine, onNoPermission = () => {} }) {
+  const proc = spawn(helperPath, args, { stdio: ['pipe', 'pipe', 'inherit'] })
   let buffer = ''
   proc.stdout.on('data', (chunk) => {
     buffer += chunk.toString()

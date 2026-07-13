@@ -5,7 +5,7 @@ import { mkdirSync } from 'fs'
 import { createRecorderWindow } from './recorder-window.js'
 import { createHotkeyMachine, startHotkeys } from './hotkeys.js'
 import { ensureModel, startWhisperServer, transcribe } from './whisper.js'
-import { initDb, saveDictation, getLastDictation, listDictionary, listSnippets, getSetting, setSetting } from './db.js'
+import { initDb, saveDictation, getLastDictation, listHistory, listDictionary, listSnippets, getSetting, setSetting } from './db.js'
 import { polish } from './polish.js'
 import { getFrontmostApp, pasteText } from './paster.js'
 import { createTray } from './tray.js'
@@ -56,7 +56,7 @@ app.whenReady().then(async () => {
   systemPreferences.askForMediaAccess('microphone').catch(() => {})
   ckpt('mic-async')
 
-  rec = createRecorderWindow()
+  rec = createRecorderWindow({ getScale: () => getSetting('popupScale', 'm') })
   ckpt('recorder-window')
   ensureModel()
   ckpt('model')
@@ -83,8 +83,13 @@ app.whenReady().then(async () => {
   })
 
   ckpt('machine')
+  const helperArgs = () => [
+    `--toggle=${getSetting('toggleShortcut', 'fn+space')}`,
+    `--ptt=${getSetting('pttShortcut', 'rcmd')}`
+  ]
   hotkeys = startHotkeys({
     helperPath: HELPER,
+    args: helperArgs(),
     machine,
     onNoPermission: () => {
       new Notification({
@@ -108,18 +113,27 @@ app.whenReady().then(async () => {
   ipcMain.handle('settings:get-all', () => ({
     language: getSetting('language', 'pt'),
     micDeviceId: getSetting('micDeviceId', ''),
-    openAtLogin: getSetting('openAtLogin', 'true')
+    openAtLogin: getSetting('openAtLogin', 'true'),
+    popupScale: getSetting('popupScale', 'm'),
+    waveColor: getSetting('waveColor', '#f5f5f4'),
+    toggleShortcut: getSetting('toggleShortcut', 'fn+space'),
+    pttShortcut: getSetting('pttShortcut', 'rcmd')
   }))
   ipcMain.handle('settings:set', async (_e, key, value) => {
     if (key === 'language') {
       await restartWhisper(value)
-    } else {
-      setSetting(key, value)
-      if (key === 'openAtLogin' && app.isPackaged) {
-        app.setLoginItemSettings({ openAtLogin: value === 'true' })
-      }
+      return
+    }
+    setSetting(key, value)
+    if (key === 'openAtLogin' && app.isPackaged) {
+      app.setLoginItemSettings({ openAtLogin: value === 'true' })
+    }
+    if (key === 'toggleShortcut' || key === 'pttShortcut') {
+      hotkeys.kill()
+      hotkeys = startHotkeys({ helperPath: HELPER, args: helperArgs(), machine, onNoPermission: () => {} })
     }
   })
+  ipcMain.handle('history:list', () => listHistory(300))
 
   ckpt('pre-tray')
   tray = createTray({

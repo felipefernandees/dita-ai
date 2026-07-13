@@ -10,5 +10,6 @@ contextBridge.exposeInMainWorld('dita', {
   copyText(t) { ipcRenderer.send('rec:copy', t) },
   closePopup() { ipcRenderer.send('rec:close') },
   getSettings() { return ipcRenderer.invoke('settings:get-all') },
-  setSetting(key, value) { return ipcRenderer.invoke('settings:set', key, value) }
+  setSetting(key, value) { return ipcRenderer.invoke('settings:set', key, value) },
+  listHistory() { return ipcRenderer.invoke('history:list') }
 })

@@ -21,7 +21,7 @@ export function createTray({ getLast, onPasteLast, onOpenSettings = () => {}, on
       { label: 'Paste last transcript', accelerator: 'Ctrl+Cmd+V', click: onPasteLast },
       { label: truncate(lastText), enabled: false },
       { type: 'separator' },
-      { label: 'Configurações…', click: onOpenSettings },
+      { label: 'Abrir Dita Aí', click: onOpenSettings },
       {
         label: 'Idiomas',
         submenu: [

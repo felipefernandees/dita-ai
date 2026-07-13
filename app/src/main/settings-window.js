@@ -10,12 +10,14 @@ export function openSettingsWindow() {
     return win
   }
   win = new BrowserWindow({
-    width: 560,
-    height: 520,
+    width: 860,
+    height: 620,
+    minWidth: 700,
+    minHeight: 480,
     title: 'Dita Aí',
-    resizable: false,
+    resizable: true,
     fullscreenable: false,
-    backgroundColor: '#f7f5f0',
+    backgroundColor: '#f3f1ea',
     webPreferences: { preload: join(__dirname, '../preload/index.js') }
   })
   win.setMenuBarVisibility(false)

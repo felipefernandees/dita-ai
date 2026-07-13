@@ -5,13 +5,22 @@ import CoreGraphics
 final class State {
     static let shared = State()
     var recording = false            // setado via stdin, controla supressão do Esc
-    var rightCmdDown = false
-    var rightCmdCombo = false
+    var pttDown = false
+    var pttCombo = false
 }
 
 func emit(_ event: String) {
     print("{\"event\":\"\(event)\"}")
     fflush(stdout)
+}
+
+// Configuração de atalhos via argv: --toggle=fn+space|opt+space|ctrl+space|f5
+// e --ptt=rcmd|ropt
+var toggleMode = "fn+space"
+var pttMode = "rcmd"
+for arg in CommandLine.arguments {
+    if arg.hasPrefix("--toggle=") { toggleMode = String(arg.dropFirst("--toggle=".count)) }
+    if arg.hasPrefix("--ptt=") { pttMode = String(arg.dropFirst("--ptt=".count)) }
 }
 
 // Thread de stdin: "state on" / "state off"
@@ -22,9 +31,8 @@ DispatchQueue.global().async {
     }
 }
 
-// Pede a permissão com o prompt oficial: isso registra o app na lista de
-// Acessibilidade dos Ajustes. Depois fica aguardando a concessão (polling),
-// sem morrer, pra não exigir reabrir o app.
+// Pede a permissão com o prompt oficial (registra o app na lista) e aguarda
+// a concessão sem morrer.
 if !AXIsProcessTrusted() {
     let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
     _ = AXIsProcessTrustedWithOptions(opts)
@@ -38,6 +46,20 @@ if !AXIsProcessTrusted() {
 let kVK_Space: Int64 = 49
 let kVK_Escape: Int64 = 53
 let kVK_RightCommand: Int64 = 54
+let kVK_RightOption: Int64 = 61
+let kVK_F5: Int64 = 96
+
+let pttKeyCode: Int64 = pttMode == "ropt" ? kVK_RightOption : kVK_RightCommand
+let pttFlag: CGEventFlags = pttMode == "ropt" ? .maskAlternate : .maskCommand
+
+func isToggle(_ keyCode: Int64, _ flags: CGEventFlags) -> Bool {
+    switch toggleMode {
+    case "opt+space": return keyCode == kVK_Space && flags.contains(.maskAlternate)
+    case "ctrl+space": return keyCode == kVK_Space && flags.contains(.maskControl)
+    case "f5": return keyCode == kVK_F5
+    default: return keyCode == kVK_Space && flags.contains(.maskSecondaryFn)
+    }
+}
 
 let mask: CGEventMask =
     (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.flagsChanged.rawValue)
@@ -47,21 +69,21 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
     let flags = event.flags
     let st = State.shared
 
-    if type == .flagsChanged && keyCode == kVK_RightCommand {
-        if flags.contains(.maskCommand) {
-            st.rightCmdDown = true
-            st.rightCmdCombo = false
+    if type == .flagsChanged && keyCode == pttKeyCode {
+        if flags.contains(pttFlag) {
+            st.pttDown = true
+            st.pttCombo = false
             emit("ptt_down")
-        } else if st.rightCmdDown {
-            st.rightCmdDown = false
-            emit(st.rightCmdCombo ? "ptt_abort" : "ptt_up")
+        } else if st.pttDown {
+            st.pttDown = false
+            emit(st.pttCombo ? "ptt_abort" : "ptt_up")
         }
         return Unmanaged.passRetained(event)
     }
 
     if type == .keyDown {
-        // Fn+Espaço: toggle. Suprime o evento pro sistema não digitar espaço.
-        if keyCode == kVK_Space && flags.contains(.maskSecondaryFn) {
+        // Toggle: suprime o evento pro sistema não digitar o caractere
+        if isToggle(keyCode, flags) {
             emit("toggle")
             return nil
         }
@@ -70,9 +92,9 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
             emit("esc")
             return nil
         }
-        // Qualquer tecla com right-cmd segurado = combo normal (Cmd+V etc.), aborta PTT
-        if st.rightCmdDown {
-            st.rightCmdCombo = true
+        // Qualquer tecla com o modificador de PTT segurado = combo normal, aborta
+        if st.pttDown {
+            st.pttCombo = true
             emit("combo")
         }
     }
