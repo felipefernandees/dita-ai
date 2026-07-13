@@ -125,11 +125,11 @@ export default function Popup() {
   }
 
   const pill = {
-    height: '82%', width: '100%', boxSizing: 'border-box',
-    borderRadius: radius, background: bgColor, border: '1px solid rgba(255,255,255,0.08)',
-    display: 'flex', alignItems: 'center', padding: '0 8px', gap: 7, overflow: 'hidden',
+    height: '92%', width: '100%', boxSizing: 'border-box',
+    borderRadius: radius, background: bgColor, border: 'none',
+    display: 'flex', alignItems: 'center', padding: '0 7px', gap: 7, overflow: 'hidden',
     color: '#F4F2EC', fontFamily: "'General Sans', ui-sans-serif, system-ui, sans-serif", fontSize: 12,
-    boxShadow: '0 6px 22px rgba(0,0,0,.45)',
+    boxShadow: '0 6px 22px rgba(0,0,0,.5)',
     transition: 'background .2s ease, border-radius .2s ease'
   }
 
@@ -147,7 +147,7 @@ export default function Popup() {
             <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity: 0.9 }}>{result}</span>
             <button
               onClick={() => { window.dita.copyText(result); window.dita.closePopup() }}
-              style={{ background: '#ECFF77', color: '#0E0E0E', border: 0, borderRadius: Math.min(radius, 999), padding: '5px 11px', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 11, fontWeight: 600, fontFamily: 'inherit', flexShrink: 0 }}
+              style={{ background: '#ECFF77', color: '#0E0E0E', border: 0, borderRadius: Math.min(radius, 999), padding: '0 13px', height: '68%', lineHeight: 1, cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 11, fontWeight: 600, fontFamily: 'inherit', flexShrink: 0, display: 'flex', alignItems: 'center' }}
             >Copiar Ditado</button>
           </>
         ) : phase === 'error' ? (

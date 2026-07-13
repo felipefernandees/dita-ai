@@ -3,7 +3,7 @@ import { join } from 'path'
 
 // Gravação = janela compacta (tight na pílula). Resultado = janela cresce com
 // animação até a largura expandida pra caber o texto + Copiar Ditado.
-const REC = { p: { w: 150, h: 32 }, m: { w: 190, h: 40 }, g: { w: 240, h: 50 } }
+const REC = { p: { w: 150, h: 36 }, m: { w: 190, h: 44 }, g: { w: 240, h: 54 } }
 const RES = { p: 252, m: 322, g: 382 }
 const MARGIN_BOTTOM = 42
 
