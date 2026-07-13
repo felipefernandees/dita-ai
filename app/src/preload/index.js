@@ -8,5 +8,7 @@ contextBridge.exposeInMainWorld('dita', {
   },
   sendAudio(buf) { ipcRenderer.send('rec:audio', buf) },
   copyText(t) { ipcRenderer.send('rec:copy', t) },
-  closePopup() { ipcRenderer.send('rec:close') }
+  closePopup() { ipcRenderer.send('rec:close') },
+  getSettings() { return ipcRenderer.invoke('settings:get-all') },
+  setSetting(key, value) { return ipcRenderer.invoke('settings:set', key, value) }
 })

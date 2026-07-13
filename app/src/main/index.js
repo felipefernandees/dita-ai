@@ -9,6 +9,7 @@ import { initDb, saveDictation, getLastDictation, listDictionary, listSnippets, 
 import { polish } from './polish.js'
 import { getFrontmostApp, pasteText } from './paster.js'
 import { createTray } from './tray.js'
+import { openSettingsWindow } from './settings-window.js'
 
 const DATA_DIR = join(homedir(), 'Library/Application Support/dita-ai')
 const HELPER = app.isPackaged
@@ -104,11 +105,28 @@ app.whenReady().then(async () => {
     whisper = await startWhisperServer({ language })
   }
 
+  ipcMain.handle('settings:get-all', () => ({
+    language: getSetting('language', 'pt'),
+    micDeviceId: getSetting('micDeviceId', ''),
+    openAtLogin: getSetting('openAtLogin', 'true')
+  }))
+  ipcMain.handle('settings:set', async (_e, key, value) => {
+    if (key === 'language') {
+      await restartWhisper(value)
+    } else {
+      setSetting(key, value)
+      if (key === 'openAtLogin' && app.isPackaged) {
+        app.setLoginItemSettings({ openAtLogin: value === 'true' })
+      }
+    }
+  })
+
   ckpt('pre-tray')
   tray = createTray({
     getLast: () => getLastDictation(),
     getLanguage: () => getSetting('language', 'pt'),
     onLanguageChange: restartWhisper,
+    onOpenSettings: () => openSettingsWindow(),
     onPasteLast: async () => {
       const last = getLastDictation()
       if (last) await pasteText(last.text)
@@ -116,7 +134,7 @@ app.whenReady().then(async () => {
   })
 
   ckpt('tray')
-  if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: true })
+  if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: getSetting('openAtLogin', 'true') === 'true' })
   ckpt('done')
 
   // Smoke test do pipeline sem atalhos: DITA_TEST_DICTATION=1 npm run dev

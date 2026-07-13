@@ -10,7 +10,7 @@ function loadIcon() {
   return img
 }
 
-export function createTray({ getLast, onPasteLast, onLanguageChange = () => {}, getLanguage = () => 'pt' }) {
+export function createTray({ getLast, onPasteLast, onOpenSettings = () => {}, onLanguageChange = () => {}, getLanguage = () => 'pt' }) {
   const tray = new Tray(loadIcon())
   tray.setToolTip('Dita Aí')
 
@@ -21,6 +21,7 @@ export function createTray({ getLast, onPasteLast, onLanguageChange = () => {}, 
       { label: 'Paste last transcript', accelerator: 'Ctrl+Cmd+V', click: onPasteLast },
       { label: truncate(lastText), enabled: false },
       { type: 'separator' },
+      { label: 'Configurações…', click: onOpenSettings },
       {
         label: 'Idiomas',
         submenu: [

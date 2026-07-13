@@ -17,7 +17,14 @@ export default function Popup() {
   }, [])
 
   async function startRecording() {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const settings = await window.dita.getSettings()
+    const audio = settings.micDeviceId ? { deviceId: { exact: settings.micDeviceId } } : true
+    let stream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio })
+    } catch {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true }) // mic salvo sumiu, cai no padrão
+    }
     const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
     const chunks = []
     recorder.ondataavailable = (e) => chunks.push(e.data)
@@ -45,19 +52,32 @@ export default function Popup() {
   }
 
   function drawWave(stream) {
-    const ctx2d = canvasRef.current.getContext('2d')
+    const canvas = canvasRef.current
+    const W = canvas.width
+    const H = canvas.height
+    const ctx2d = canvas.getContext('2d')
     const audioCtx = new AudioContext()
     const analyser = audioCtx.createAnalyser()
     analyser.fftSize = 64
     audioCtx.createMediaStreamSource(stream).connect(analyser)
     const data = new Uint8Array(analyser.frequencyBinCount)
+
+    // Barras simétricas: nascem no MEIO e propagam pras duas pontas.
+    const BAR_W = 3
+    const GAP = 3
+    const HALF = Math.floor(W / 2 / (BAR_W + GAP))
     const loop = () => {
       analyser.getByteFrequencyData(data)
-      ctx2d.clearRect(0, 0, 180, 40)
+      ctx2d.clearRect(0, 0, W, H)
       ctx2d.fillStyle = '#f5f5f4'
-      for (let i = 0; i < 24; i++) {
-        const h = Math.max(3, (data[i] / 255) * 34)
-        ctx2d.fillRect(i * 7.5, 20 - h / 2, 4, h)
+      const cx = W / 2
+      for (let i = 0; i < HALF; i++) {
+        const v = data[i] / 255
+        const h = Math.max(2.5, v * H * 0.9)
+        const y = (H - h) / 2
+        // centro pra direita e centro pra esquerda com a mesma altura
+        ctx2d.fillRect(cx + i * (BAR_W + GAP), y, BAR_W, h)
+        if (i > 0) ctx2d.fillRect(cx - i * (BAR_W + GAP) - BAR_W, y, BAR_W, h)
       }
       mediaRef.current.raf = requestAnimationFrame(loop)
     }
@@ -65,10 +85,10 @@ export default function Popup() {
   }
 
   const pill = {
-    height: 56, margin: 8, borderRadius: 28, background: '#141414',
-    display: 'flex', alignItems: 'center', padding: '0 14px', gap: 10,
-    color: '#eee', fontFamily: 'system-ui', fontSize: 13,
-    boxShadow: '0 6px 24px rgba(0,0,0,.45)'
+    height: '100%', borderRadius: 22, background: '#141414',
+    display: 'flex', alignItems: 'center', padding: '0 10px', gap: 8,
+    color: '#eee', fontFamily: 'system-ui', fontSize: 12,
+    boxShadow: '0 4px 18px rgba(0,0,0,.5)', boxSizing: 'border-box'
   }
 
   if (phase === 'done') {
@@ -77,7 +97,7 @@ export default function Popup() {
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{result}</span>
         <button
           onClick={() => { window.dita.copyText(result); window.dita.closePopup() }}
-          style={{ background: '#3a3a3a', color: '#fff', border: 0, borderRadius: 8, padding: '6px 12px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+          style={{ background: '#3a3a3a', color: '#fff', border: 0, borderRadius: 8, padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 12 }}
         >Copiar Ditado</button>
       </div>
     )
@@ -95,11 +115,11 @@ export default function Popup() {
     <div style={pill}>
       <button
         onClick={() => window.dita.closePopup()}
-        style={{ background: '#2a2a2a', color: '#bbb', border: 0, borderRadius: '50%', width: 26, height: 26, cursor: 'pointer' }}
+        style={{ background: '#2a2a2a', color: '#bbb', border: 0, borderRadius: '50%', width: 22, height: 22, cursor: 'pointer', fontSize: 11, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
       >✕</button>
       {phase === 'processing'
         ? <span style={{ flex: 1, textAlign: 'center', color: '#aaa' }}>Transcrevendo…</span>
-        : <canvas ref={canvasRef} width={180} height={40} style={{ flex: 1 }} />}
+        : <canvas ref={canvasRef} width={150} height={30} style={{ flex: 1 }} />}
     </div>
   )
 }
