@@ -1,13 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 
-// Larguras por tamanho: `win` é a janela (transparente, sempre a maior, pra
-// caber a expansão) e `rec`/`exp` são as larguras da pílula compacta e expandida.
-const SCALE = {
-  p: { rec: 132, exp: 242 },
-  m: { rec: 176, exp: 312 },
-  g: { rec: 222, exp: 372 }
-}
-
 export default function Popup() {
   const [phase, setPhase] = useState('idle') // idle|recording|processing|done|error
   const [result, setResult] = useState('')
@@ -15,7 +7,6 @@ export default function Popup() {
   const [waveColor, setWaveColor] = useState('#F4F2EC')
   const [bgColor, setBgColor] = useState('#221C33')
   const [radius, setRadius] = useState(999)
-  const [scale, setScale] = useState('m')
   const canvasRef = useRef(null)
   const mediaRef = useRef({})
   const colorRef = useRef('#F4F2EC')
@@ -84,7 +75,6 @@ export default function Popup() {
     setWaveColor(colorRef.current)
     setBgColor(settings.popupBg || '#221C33')
     setRadius(settings.popupRadius != null ? Number(settings.popupRadius) : 999)
-    setScale(settings.popupScale || 'm')
     const audioInput = settings.micDeviceId ? { deviceId: { exact: settings.micDeviceId } } : true
     let stream
     try {
@@ -127,10 +117,6 @@ export default function Popup() {
     setPhase(keep ? 'processing' : 'idle')
   }
 
-  const S = SCALE[scale] || SCALE.m
-  const expanded = phase === 'done'
-  const maxW = expanded ? S.exp : S.rec
-
   const wrap = {
     position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
     opacity: shown ? 1 : 0,
@@ -139,12 +125,12 @@ export default function Popup() {
   }
 
   const pill = {
-    height: '78%', width: '100%', maxWidth: maxW, boxSizing: 'border-box',
+    height: '82%', width: '100%', boxSizing: 'border-box',
     borderRadius: radius, background: bgColor, border: '1px solid rgba(255,255,255,0.08)',
     display: 'flex', alignItems: 'center', padding: '0 8px', gap: 7, overflow: 'hidden',
     color: '#F4F2EC', fontFamily: "'General Sans', ui-sans-serif, system-ui, sans-serif", fontSize: 12,
     boxShadow: '0 6px 22px rgba(0,0,0,.45)',
-    transition: 'max-width .32s cubic-bezier(.22,.9,.24,1), background .2s ease, border-radius .2s ease'
+    transition: 'background .2s ease, border-radius .2s ease'
   }
 
   const xBtn = {

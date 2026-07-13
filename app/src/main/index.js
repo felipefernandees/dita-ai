@@ -32,6 +32,7 @@ async function processDictation(webmBuffer) {
     tray.updateLastTranscript(row.text)
 
     const pasted = await pasteText(text)
+    rec.expand() // janela cresce com animação pra caber texto + Copiar Ditado
     rec.send('rec:result', { text })
     if (pasted) setTimeout(() => rec.hideAnimated(), 4000) // Copiar Ditado fica à mão por 4s
     // se não colou, o popup persiste com Copiar Ditado

@@ -82,9 +82,13 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
     }
 
     if type == .keyDown {
+        // Ignora auto-repeat: segurar a tecla NÃO deve disparar vários toggles
+        // (era isso que fazia o popup piscar/sumir no meio da fala)
+        let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+
         // Toggle: suprime o evento pro sistema não digitar o caractere
         if isToggle(keyCode, flags) {
-            emit("toggle")
+            if !isRepeat { emit("toggle") }
             return nil
         }
         // Esc: só reporta (e suprime) se estiver gravando
