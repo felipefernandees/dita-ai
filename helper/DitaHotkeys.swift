@@ -22,9 +22,17 @@ DispatchQueue.global().async {
     }
 }
 
-guard AXIsProcessTrusted() else {
+// Pede a permissão com o prompt oficial: isso registra o app na lista de
+// Acessibilidade dos Ajustes. Depois fica aguardando a concessão (polling),
+// sem morrer, pra não exigir reabrir o app.
+if !AXIsProcessTrusted() {
+    let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+    _ = AXIsProcessTrustedWithOptions(opts)
     emit("no_permission")
-    exit(1)
+    while !AXIsProcessTrusted() {
+        Thread.sleep(forTimeInterval: 2)
+    }
+    emit("permission_granted")
 }
 
 let kVK_Space: Int64 = 49

@@ -41,14 +41,26 @@ async function processDictation(webmBuffer) {
   }
 }
 
+const CKPT = process.env.DITA_CHECKPOINT
+function ckpt(tag) {
+  if (CKPT) require('fs').appendFileSync(CKPT, tag + '\n')
+}
+
 app.whenReady().then(async () => {
+  ckpt('ready')
   mkdirSync(DATA_DIR, { recursive: true })
   initDb(join(DATA_DIR, 'dita.db'))
-  await systemPreferences.askForMediaAccess('microphone')
+  ckpt('db')
+  // não-bloqueante: se o prompt de mic ficar aberto, o resto do app sobe mesmo assim
+  systemPreferences.askForMediaAccess('microphone').catch(() => {})
+  ckpt('mic-async')
 
   rec = createRecorderWindow()
+  ckpt('recorder-window')
   ensureModel()
+  ckpt('model')
   whisper = await startWhisperServer({ language: getSetting('language', 'pt') })
+  ckpt('whisper')
 
   const machine = createHotkeyMachine({
     onStart: async () => {
@@ -69,17 +81,19 @@ app.whenReady().then(async () => {
     }
   })
 
+  ckpt('machine')
   hotkeys = startHotkeys({
     helperPath: HELPER,
     machine,
     onNoPermission: () => {
       new Notification({
         title: 'Dita Aí precisa de permissão',
-        body: 'Ajustes > Privacidade e Segurança > Acessibilidade: ative o Dita Aí e reabra o app.'
+        body: 'Ajustes > Privacidade e Segurança > Acessibilidade: ative o Dita Aí. Os atalhos ligam sozinhos em seguida.'
       }).show()
     }
   })
 
+  ckpt('hotkeys')
   ipcMain.on('rec:audio', (_e, buf) => processDictation(buf))
   ipcMain.on('rec:copy', (_e, text) => clipboard.writeText(text))
   ipcMain.on('rec:close', () => { machine.handle('esc'); rec.hide() })
@@ -90,6 +104,7 @@ app.whenReady().then(async () => {
     whisper = await startWhisperServer({ language })
   }
 
+  ckpt('pre-tray')
   tray = createTray({
     getLast: () => getLastDictation(),
     getLanguage: () => getSetting('language', 'pt'),
@@ -100,7 +115,9 @@ app.whenReady().then(async () => {
     }
   })
 
+  ckpt('tray')
   if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: true })
+  ckpt('done')
 
   // Smoke test do pipeline sem atalhos: DITA_TEST_DICTATION=1 npm run dev
   if (process.env.DITA_TEST_DICTATION) {

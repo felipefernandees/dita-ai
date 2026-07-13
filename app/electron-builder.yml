@@ -1,5 +1,7 @@
 appId: com.felipetambara.dita-ai
-productName: Dita Aí
+productName: Dita AI
+asar: false
+afterPack: scripts/after-pack.cjs
 directories:
   output: dist
 files:
@@ -16,6 +18,7 @@ mac:
   target:
     - dir
   extendInfo:
+    CFBundleDisplayName: Dita Aí
     NSMicrophoneUsageDescription: O Dita Aí usa o microfone para transcrever sua fala.
     LSUIElement: false
   hardenedRuntime: false
