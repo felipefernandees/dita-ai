@@ -10,6 +10,7 @@ export default function Popup() {
   const canvasRef = useRef(null)
   const mediaRef = useRef({})
   const colorRef = useRef('#F4F2EC')
+  const radiusRef = useRef(999)
 
   useEffect(() => {
     window.dita.onCommand(async (ch, payload) => {
@@ -40,8 +41,12 @@ export default function Popup() {
     const H = canvas.height
     const BAR_W = 3 * devicePixelRatio
     const GAP = 3 * devicePixelRatio
-    const half = Math.floor((W / 2 - GAP / 2) / (BAR_W + GAP))
     const cx = W / 2
+    // margem lateral que acompanha o arredondamento, pra as barras nunca
+    // entrarem na quina e serem cortadas
+    const cornerClear = Math.min(radiusRef.current * devicePixelRatio, H / 2) + 6 * devicePixelRatio
+    const usable = W / 2 - cornerClear
+    const half = Math.max(1, Math.floor((usable - GAP / 2) / (BAR_W + GAP)))
 
     let raf
     const loop = () => {
@@ -74,7 +79,8 @@ export default function Popup() {
     colorRef.current = settings.waveColor || '#F4F2EC'
     setWaveColor(colorRef.current)
     setBgColor(settings.popupBg || '#221C33')
-    setRadius(settings.popupRadius != null ? Number(settings.popupRadius) : 999)
+    const r = settings.popupRadius != null ? Number(settings.popupRadius) : 999
+    setRadius(r); radiusRef.current = r
     const audioInput = settings.micDeviceId ? { deviceId: { exact: settings.micDeviceId } } : true
     let stream
     try {
@@ -135,33 +141,31 @@ export default function Popup() {
 
   const xBtn = {
     background: '#2C2542', color: '#A8A4B5', border: 0, borderRadius: '50%', width: 20, height: 20,
-    cursor: 'pointer', fontSize: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0
+    cursor: 'pointer', fontSize: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+    position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', zIndex: 2
   }
+  const copyBtn = {
+    background: '#ECFF77', color: '#0E0E0E', border: 0, borderRadius: Math.min(radius, 999), padding: '0 13px', height: '68%',
+    lineHeight: 1, cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 11, fontWeight: 600, fontFamily: 'inherit', flexShrink: 0, display: 'flex', alignItems: 'center'
+  }
+
+  const pillRel = { ...pill, position: 'relative', justifyContent: 'center', padding: '0 8px' }
 
   return (
     <div style={wrap}>
-      <div style={pill}>
+      <div style={pillRel}>
+        <button onClick={() => window.dita.closePopup()} style={xBtn}>✕</button>
         {phase === 'done' ? (
-          <>
-            <button onClick={() => window.dita.closePopup()} style={xBtn}>✕</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', paddingLeft: 24 }}>
             <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity: 0.9 }}>{result}</span>
-            <button
-              onClick={() => { window.dita.copyText(result); window.dita.closePopup() }}
-              style={{ background: '#ECFF77', color: '#0E0E0E', border: 0, borderRadius: Math.min(radius, 999), padding: '0 13px', height: '68%', lineHeight: 1, cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 11, fontWeight: 600, fontFamily: 'inherit', flexShrink: 0, display: 'flex', alignItems: 'center' }}
-            >Copiar Ditado</button>
-          </>
+            <button onClick={() => { window.dita.copyText(result); window.dita.closePopup() }} style={copyBtn}>Copiar Ditado</button>
+          </div>
         ) : phase === 'error' ? (
-          <span style={{ flex: 1, textAlign: 'center', color: '#f0a0a0' }}>Falha. Áudio preservado.</span>
+          <span style={{ color: '#f0a0a0', paddingLeft: 20 }}>Falha. Áudio preservado.</span>
         ) : phase === 'processing' ? (
-          <>
-            <button onClick={() => window.dita.closePopup()} style={xBtn}>✕</button>
-            <span style={{ flex: 1, textAlign: 'center', color: '#A8A4B5' }}>Transcrevendo…</span>
-          </>
+          <span style={{ color: '#A8A4B5', paddingLeft: 20 }}>Transcrevendo…</span>
         ) : (
-          <>
-            <button onClick={() => window.dita.closePopup()} style={xBtn}>✕</button>
-            <canvas ref={canvasRef} style={{ flex: 1, height: '70%' }} />
-          </>
+          <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} />
         )}
       </div>
     </div>

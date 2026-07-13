@@ -68,6 +68,38 @@ function Toggle({ checked, onChange }) {
 
 const WAVE_COLORS = ['#F4F2EC', '#ECFF77', '#E9D8FD', '#C6F6D5', '#BDE2F8', '#f472b6', '#2dd4bf']
 const BG_COLORS = ['#221C33', '#16121F', '#0E0E0E', '#1e293b', '#3b2f1a', '#F4F2EC']
+const PREVIEW_W = { p: 150, m: 190, g: 240 }
+const PREVIEW_H = { p: 36, m: 44, g: 54 }
+
+// Prévia ao vivo do popup: reflete cor, arredondamento, tamanho e waveform na
+// hora em que o Felipe mexe nos controles
+function PopupPreview({ settings }) {
+  const scale = settings.popupScale || 'm'
+  const w = PREVIEW_W[scale], h = PREVIEW_H[scale]
+  const radius = settings.popupRadius != null ? Number(settings.popupRadius) : 999
+  const bg = settings.popupBg || '#221C33'
+  const wave = settings.waveColor || '#F4F2EC'
+  const bars = [5, 8, 12, 7, 15, 10, 18, 10, 15, 7, 12, 8, 5]
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 20px' }}>
+      <div style={{
+        width: w, height: h, borderRadius: radius, background: bg, position: 'relative',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        boxShadow: '0 6px 22px rgba(0,0,0,.4)', transition: 'border-radius .15s ease, background .2s ease, width .2s ease, height .2s ease'
+      }}>
+        <div style={{
+          position: 'absolute', left: 8, width: 18, height: 18, borderRadius: '50%',
+          background: '#2C2542', color: '#A8A4B5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9
+        }}>✕</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 3, height: '52%' }}>
+          {bars.map((bh, i) => (
+            <div key={i} style={{ width: 3, height: `${(bh / 18) * 100}%`, background: wave, borderRadius: 2 }} />
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function Config({ settings, mics, update }) {
   return (
@@ -106,6 +138,7 @@ function Config({ settings, mics, update }) {
       </div>
 
       <div style={S.kicker}>Aparência do popup</div>
+      <PopupPreview settings={settings} />
       <div style={S.card}>
         <div style={S.row}>
           <div>
