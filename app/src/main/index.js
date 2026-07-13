@@ -33,12 +33,12 @@ async function processDictation(webmBuffer) {
 
     const pasted = await pasteText(text)
     rec.send('rec:result', { text })
-    if (pasted) setTimeout(() => rec.hide(), 4000) // Copiar Ditado fica à mão por 4s
+    if (pasted) setTimeout(() => rec.hideAnimated(), 4000) // Copiar Ditado fica à mão por 4s
     // se não colou, o popup persiste com Copiar Ditado
   } catch (err) {
     console.error('pipeline:', err)
     rec.send('rec:phase', 'error')
-    setTimeout(() => rec.hide(), 2500)
+    setTimeout(() => rec.hideAnimated(), 2500)
   }
 }
 
@@ -88,8 +88,8 @@ app.whenReady().then(async () => {
     },
     onCancel: () => {
       hotkeys.setRecordingState(false)
+      rec.hideAnimated() // rec:closing anima a saída; o releaseMic acontece no rec:cancel
       rec.send('rec:cancel')
-      rec.hide()
     }
   })
 
@@ -113,7 +113,7 @@ app.whenReady().then(async () => {
   ckpt('hotkeys')
   ipcMain.on('rec:audio', (_e, buf) => processDictation(buf))
   ipcMain.on('rec:copy', (_e, text) => clipboard.writeText(text))
-  ipcMain.on('rec:close', () => { machine.handle('esc'); rec.hide() })
+  ipcMain.on('rec:close', () => { machine.handle('esc'); rec.hideAnimated() })
 
   async function restartWhisper(language) {
     setSetting('language', language)

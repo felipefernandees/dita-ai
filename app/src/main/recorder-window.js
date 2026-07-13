@@ -1,10 +1,12 @@
 import { BrowserWindow, screen } from 'electron'
 import { join } from 'path'
 
+// A janela é transparente e sempre tem a largura EXPANDIDA (pra caber o texto
+// + botão quando o popup cresce); a pílula compacta fica centrada dentro dela.
 const SIZES = {
-  p: { w: 150, h: 32 },
-  m: { w: 190, h: 40 },
-  g: { w: 240, h: 50 }
+  p: { w: 252, h: 34 },
+  m: { w: 322, h: 42 },
+  g: { w: 382, h: 52 }
 }
 
 export function createRecorderWindow({ getScale = () => 'm' } = {}) {
@@ -35,6 +37,12 @@ export function createRecorderWindow({ getScale = () => 'm' } = {}) {
     win,
     show() { position(); win.showInactive() },
     hide() { win.hide() },
+    // toca a animação de saída no renderer e só então esconde a janela
+    hideAnimated() {
+      if (!win.isVisible()) return
+      win.webContents.send('rec:closing')
+      setTimeout(() => { if (!win.isDestroyed()) win.hide() }, 240)
+    },
     send(channel, ...args) { win.webContents.send(channel, ...args) }
   }
 }
