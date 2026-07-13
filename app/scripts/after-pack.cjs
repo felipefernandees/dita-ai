@@ -15,6 +15,12 @@ exports.default = async function afterPack(context) {
   } catch {
     console.log('  • afterPack: ElectronAsarIntegrity já ausente')
   }
-  execSync(`codesign --force --deep --sign - "${appPath}"`)
-  console.log('  • afterPack: re-assinado ad-hoc')
+  // identidade local estável (criada 2026-07-13) mantém as permissões de
+  // TCC (Acessibilidade/mic) válidas entre builds; fallback ad-hoc se sumir
+  let identity = '-'
+  try {
+    execSync('security find-identity -v -p codesigning').toString().includes('Dita AI Dev') && (identity = 'Dita AI Dev')
+  } catch { /* keychain indisponível, segue ad-hoc */ }
+  execSync(`codesign --force --deep --sign "${identity}" "${appPath}"`)
+  console.log(`  • afterPack: re-assinado com "${identity}"`)
 }
