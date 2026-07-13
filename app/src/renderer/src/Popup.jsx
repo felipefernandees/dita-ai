@@ -59,7 +59,15 @@ export default function Popup() {
     return () => cancelAnimationFrame(raf)
   }, [phase])
 
+  function releaseMic() {
+    const m = mediaRef.current
+    try { m.stream?.getTracks().forEach((t) => t.stop()) } catch { /* já parado */ }
+    try { m.audioCtx?.close() } catch { /* já fechado */ }
+    if (m.watchdog) clearTimeout(m.watchdog)
+  }
+
   async function startRecording() {
+    releaseMic() // garante que nenhum stream anterior ficou aberto
     const settings = await window.dita.getSettings()
     colorRef.current = settings.waveColor || '#f5f5f4'
     setWaveColor(colorRef.current)
@@ -74,12 +82,11 @@ export default function Popup() {
     const chunks = []
     recorder.ondataavailable = (e) => chunks.push(e.data)
     recorder.onstop = async () => {
-      stream.getTracks().forEach((t) => t.stop())
       if (mediaRef.current.keep) {
         const buf = await new Blob(chunks).arrayBuffer()
         window.dita.sendAudio(buf)
       }
-      mediaRef.current.audioCtx?.close().catch(() => {})
+      releaseMic() // solta o microfone SEMPRE (fim do laranja no macOS)
     }
     recorder.start(250)
 
@@ -88,7 +95,9 @@ export default function Popup() {
     analyser.fftSize = 64
     audioCtx.createMediaStreamSource(stream).connect(analyser)
 
-    mediaRef.current = { recorder, stream, analyser, audioCtx, keep: false }
+    // watchdog: gravação nunca fica pendurada segurando o mic por mais de 3 min
+    const watchdog = setTimeout(() => stopRecording(true), 180000)
+    mediaRef.current = { recorder, stream, analyser, audioCtx, watchdog, keep: false }
     setPhase('recording')
   }
 
@@ -97,6 +106,8 @@ export default function Popup() {
     if (m.recorder && m.recorder.state !== 'inactive') {
       m.keep = keep
       m.recorder.stop()
+    } else {
+      releaseMic() // não havia recorder ativo, ainda assim solta qualquer stream órfão
     }
     setPhase(keep ? 'processing' : 'idle')
   }

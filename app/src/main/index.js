@@ -47,6 +47,17 @@ function ckpt(tag) {
   if (CKPT) require('fs').appendFileSync(CKPT, tag + '\n')
 }
 
+// Instância única: se o app já roda e o Felipe abre de novo (Finder/Dock),
+// em vez de subir outra cópia, traz a janela de configurações pra frente.
+// Isso garante acesso às configurações mesmo com o ícone da barra escondido.
+const gotLock = app.requestSingleInstanceLock()
+if (!gotLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => openSettingsWindow())
+  app.on('activate', () => openSettingsWindow())
+}
+
 app.whenReady().then(async () => {
   ckpt('ready')
   mkdirSync(DATA_DIR, { recursive: true })
