@@ -4,6 +4,8 @@ export default function Popup() {
   const [phase, setPhase] = useState('idle') // idle|recording|processing|done|error
   const [result, setResult] = useState('')
   const [waveColor, setWaveColor] = useState('#F4F2EC')
+  const [bgColor, setBgColor] = useState('#221C33')
+  const [radius, setRadius] = useState(999)
   const canvasRef = useRef(null)
   const mediaRef = useRef({})
   const colorRef = useRef('#F4F2EC')
@@ -71,6 +73,8 @@ export default function Popup() {
     const settings = await window.dita.getSettings()
     colorRef.current = settings.waveColor || '#F4F2EC'
     setWaveColor(colorRef.current)
+    setBgColor(settings.popupBg || '#221C33')
+    setRadius(settings.popupRadius != null ? Number(settings.popupRadius) : 999)
     const audio = settings.micDeviceId ? { deviceId: { exact: settings.micDeviceId } } : true
     let stream
     try {
@@ -113,10 +117,10 @@ export default function Popup() {
   }
 
   const pill = {
-    height: '100vh', width: '100vw', borderRadius: 999, background: '#221C33',
+    height: '100vh', width: '100vw', borderRadius: radius, background: bgColor,
     display: 'flex', alignItems: 'center', padding: '0 8px', gap: 7,
     color: '#F4F2EC', fontFamily: "'General Sans', ui-sans-serif, system-ui, sans-serif",
-    fontSize: 12, boxSizing: 'border-box', border: '1px solid #322B47'
+    fontSize: 12, boxSizing: 'border-box', border: '1px solid rgba(255,255,255,0.08)'
   }
 
   if (phase === 'done') {

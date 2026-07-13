@@ -2,9 +2,9 @@ import { BrowserWindow, screen } from 'electron'
 import { join } from 'path'
 
 const SIZES = {
-  p: { w: 180, h: 34 },
-  m: { w: 230, h: 44 },
-  g: { w: 290, h: 56 }
+  p: { w: 150, h: 32 },
+  m: { w: 190, h: 40 },
+  g: { w: 240, h: 50 }
 }
 
 export function createRecorderWindow({ getScale = () => 'm' } = {}) {

@@ -67,6 +67,7 @@ function Toggle({ checked, onChange }) {
 }
 
 const WAVE_COLORS = ['#F4F2EC', '#ECFF77', '#E9D8FD', '#C6F6D5', '#BDE2F8', '#f472b6', '#2dd4bf']
+const BG_COLORS = ['#221C33', '#16121F', '#0E0E0E', '#1e293b', '#3b2f1a', '#F4F2EC']
 
 function Config({ settings, mics, update }) {
   return (
@@ -132,6 +133,38 @@ function Config({ settings, mics, update }) {
             ))}
             <input type="color" value={settings.waveColor || '#F4F2EC'} onChange={(e) => update('waveColor', e.target.value)}
               style={{ width: 26, height: 26, border: 'none', background: 'transparent', cursor: 'pointer', padding: 0 }} title="Cor personalizada" />
+          </div>
+        </div>
+        <div style={{ ...S.row, ...S.divider }}>
+          <div>
+            <div style={S.label}>Cor de fundo</div>
+            <div style={S.sub}>O fundo da pílula de gravação</div>
+          </div>
+          <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
+            {BG_COLORS.map((c) => (
+              <div key={c} onClick={() => update('popupBg', c)} style={{
+                width: 22, height: 22, borderRadius: '50%', background: c, cursor: 'pointer',
+                border: settings.popupBg === c ? `2px solid ${C.accent}` : `1px solid ${C.border}`,
+                boxSizing: 'border-box'
+              }} />
+            ))}
+            <input type="color" value={settings.popupBg || '#221C33'} onChange={(e) => update('popupBg', e.target.value)}
+              style={{ width: 26, height: 26, border: 'none', background: 'transparent', cursor: 'pointer', padding: 0 }} title="Cor personalizada" />
+          </div>
+        </div>
+        <div style={{ ...S.row, ...S.divider }}>
+          <div>
+            <div style={S.label}>Arredondamento das bordas</div>
+            <div style={S.sub}>De quadrado a totalmente arredondado</div>
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <input type="range" min="0" max="999" step="1"
+              value={settings.popupRadius != null ? settings.popupRadius : '999'}
+              onChange={(e) => update('popupRadius', e.target.value)}
+              style={{ width: 150, accentColor: C.accent }} />
+            <span style={{ ...S.kbd, minWidth: 34, textAlign: 'center' }}>
+              {Number(settings.popupRadius) >= 999 ? 'full' : `${settings.popupRadius}px`}
+            </span>
           </div>
         </div>
       </div>

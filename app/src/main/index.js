@@ -126,7 +126,9 @@ app.whenReady().then(async () => {
     micDeviceId: getSetting('micDeviceId', ''),
     openAtLogin: getSetting('openAtLogin', 'true'),
     popupScale: getSetting('popupScale', 'm'),
-    waveColor: getSetting('waveColor', '#f5f5f4'),
+    waveColor: getSetting('waveColor', '#F4F2EC'),
+    popupBg: getSetting('popupBg', '#221C33'),
+    popupRadius: getSetting('popupRadius', '999'),
     toggleShortcut: getSetting('toggleShortcut', 'fn+space'),
     pttShortcut: getSetting('pttShortcut', 'rcmd')
   }))
