@@ -1,0 +1,21 @@
+appId: com.felipetambara.dita-ai
+productName: Dita Aí
+directories:
+  output: dist
+files:
+  - out/**
+extraResources:
+  - from: ../helper/dita-hotkeys
+    to: dita-hotkeys
+  - from: resources/trayTemplate.png
+    to: trayTemplate.png
+  - from: resources/trayTemplate@2x.png
+    to: trayTemplate@2x.png
+mac:
+  category: public.app-category.productivity
+  target:
+    - dir
+  extendInfo:
+    NSMicrophoneUsageDescription: O Dita Aí usa o microfone para transcrever sua fala.
+    LSUIElement: false
+  hardenedRuntime: false
