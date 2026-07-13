@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 
 export default function Popup() {
-  const [phase, setPhase] = useState('idle') // idle|recording|processing|done|error
+  const [phase, setPhase] = useState('idle') // idle|recording|processing|done|error|cancelled
   const [result, setResult] = useState('')
+  const [pasted, setPasted] = useState(false)
   const [shown, setShown] = useState(false)
-  const [waveColor, setWaveColor] = useState('#F4F2EC')
   const [bgColor, setBgColor] = useState('#221C33')
   const [radius, setRadius] = useState(999)
   const canvasRef = useRef(null)
@@ -18,14 +18,13 @@ export default function Popup() {
       if (ch === 'rec:stop') stopRecording(true)
       if (ch === 'rec:cancel') { stopRecording(false); animateOut() }
       if (ch === 'rec:phase') setPhase(payload)
-      if (ch === 'rec:result') { setResult(payload.text); setPhase('done') }
+      if (ch === 'rec:result') { setResult(payload.text); setPasted(!!payload.pasted); setPhase('done') }
+      if (ch === 'rec:cancelled') setPhase('cancelled') // o áudio já foi capturado via rec:stop
       if (ch === 'rec:closing') animateOut()
     })
   }, [])
 
-  function animateOut() {
-    setShown(false)
-  }
+  function animateOut() { setShown(false) }
 
   useEffect(() => {
     if (phase !== 'recording') return
@@ -39,13 +38,16 @@ export default function Popup() {
     const data = new Uint8Array(analyser.frequencyBinCount)
     const W = canvas.width
     const H = canvas.height
-    const BAR_W = 3 * devicePixelRatio
-    const GAP = 3 * devicePixelRatio
+    const dpr = devicePixelRatio
+    const BAR_W = 3 * dpr
+    const GAP = 3 * dpr
     const cx = W / 2
-    // margem lateral que acompanha o arredondamento, pra as barras nunca
-    // entrarem na quina e serem cortadas
-    const cornerClear = Math.min(radiusRef.current * devicePixelRatio, H / 2) + 6 * devicePixelRatio
-    const usable = W / 2 - cornerClear
+    // margem lateral: acompanha o arredondamento E garante que o X (à esquerda)
+    // nunca fica coberto pelas barras
+    const cornerClear = Math.min(radiusRef.current * dpr, H / 2) + 6 * dpr
+    const xClear = 34 * dpr
+    const inset = Math.max(cornerClear, xClear)
+    const usable = W / 2 - inset
     const half = Math.max(1, Math.floor((usable - GAP / 2) / (BAR_W + GAP)))
 
     let raf
@@ -55,7 +57,7 @@ export default function Popup() {
       ctx2d.fillStyle = colorRef.current
       for (let i = 0; i < half; i++) {
         const v = data[i] / 255
-        const h = Math.max(2 * devicePixelRatio, v * H * 0.9)
+        const h = Math.max(2 * dpr, v * H * 0.82)
         const y = (H - h) / 2
         ctx2d.fillRect(cx + GAP / 2 + i * (BAR_W + GAP), y, BAR_W, h)
         ctx2d.fillRect(cx - GAP / 2 - BAR_W - i * (BAR_W + GAP), y, BAR_W, h)
@@ -77,7 +79,6 @@ export default function Popup() {
     releaseMic()
     const settings = await window.dita.getSettings()
     colorRef.current = settings.waveColor || '#F4F2EC'
-    setWaveColor(colorRef.current)
     setBgColor(settings.popupBg || '#221C33')
     const r = settings.popupRadius != null ? Number(settings.popupRadius) : 999
     setRadius(r); radiusRef.current = r
@@ -108,7 +109,6 @@ export default function Popup() {
     const watchdog = setTimeout(() => stopRecording(true), 180000)
     mediaRef.current = { recorder, stream, analyser, audioCtx, watchdog, keep: false }
     setPhase('recording')
-    // dispara a animação de entrada no próximo frame
     requestAnimationFrame(() => setShown(true))
   }
 
@@ -120,7 +120,8 @@ export default function Popup() {
     } else {
       releaseMic()
     }
-    setPhase(keep ? 'processing' : 'idle')
+    if (!keep && phase === 'recording') setPhase('idle')
+    else if (keep) setPhase('processing')
   }
 
   const wrap = {
@@ -129,43 +130,57 @@ export default function Popup() {
     transform: shown ? 'translateY(0) scale(1)' : 'translateY(14px) scale(0.9)',
     transition: 'opacity .2s ease, transform .3s cubic-bezier(.2,.9,.25,1)'
   }
-
   const pill = {
-    height: '92%', width: '100%', boxSizing: 'border-box',
-    borderRadius: radius, background: bgColor, border: 'none',
-    display: 'flex', alignItems: 'center', padding: '0 7px', gap: 7, overflow: 'hidden',
+    height: '100%', width: '100%', boxSizing: 'border-box',
+    borderRadius: radius, background: bgColor, position: 'relative',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 8px', overflow: 'hidden',
     color: '#F4F2EC', fontFamily: "'General Sans', ui-sans-serif, system-ui, sans-serif", fontSize: 12,
-    boxShadow: '0 6px 22px rgba(0,0,0,.5)',
-    transition: 'background .2s ease, border-radius .2s ease'
+    boxShadow: '0 8px 24px rgba(0,0,0,.55)',
+    transition: 'background .2s ease, border-radius .15s ease'
   }
-
   const xBtn = {
-    background: '#2C2542', color: '#A8A4B5', border: 0, borderRadius: '50%', width: 20, height: 20,
-    cursor: 'pointer', fontSize: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
-    position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', zIndex: 2
+    background: 'rgba(255,255,255,0.10)', color: '#C9C6D4', border: 0, borderRadius: '50%', width: 20, height: 20,
+    cursor: 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+    position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', zIndex: 2
   }
   const copyBtn = {
-    background: '#ECFF77', color: '#0E0E0E', border: 0, borderRadius: Math.min(radius, 999), padding: '0 13px', height: '68%',
-    lineHeight: 1, cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 11, fontWeight: 600, fontFamily: 'inherit', flexShrink: 0, display: 'flex', alignItems: 'center'
+    background: '#ECFF77', color: '#0E0E0E', border: 0, borderRadius: 9, padding: '6px 14px',
+    cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 12, fontWeight: 600, fontFamily: 'inherit', flexShrink: 0
   }
-
-  const pillRel = { ...pill, position: 'relative', justifyContent: 'center', padding: '0 8px' }
+  const undoBtn = { ...copyBtn, background: 'rgba(255,255,255,0.12)', color: '#F4F2EC' }
 
   return (
     <div style={wrap}>
-      <div style={pillRel}>
-        <button onClick={() => window.dita.closePopup()} style={xBtn}>✕</button>
-        {phase === 'done' ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', paddingLeft: 24 }}>
-            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity: 0.9 }}>{result}</span>
-            <button onClick={() => { window.dita.copyText(result); window.dita.closePopup() }} style={copyBtn}>Copiar Ditado</button>
+      <div style={pill}>
+        {phase === 'done' && !pasted ? (
+          <>
+            <button onClick={() => window.dita.closePopup()} style={xBtn}>✕</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', paddingLeft: 26 }}>
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity: 0.92 }}>{result}</span>
+              <button onClick={() => { window.dita.copyText(result); window.dita.closePopup() }} style={copyBtn}>Copiar Ditado</button>
+            </div>
+          </>
+        ) : phase === 'done' && pasted ? (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#ECFF77', fontWeight: 600 }}>
+            <span style={{ fontSize: 14 }}>✓</span> Colado
+          </span>
+        ) : phase === 'cancelled' ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingLeft: 4 }}>
+            <span style={{ color: '#A8A4B5' }}>Transcrição cancelada</span>
+            <button onClick={() => window.dita.undo()} style={undoBtn}>Anular</button>
           </div>
         ) : phase === 'error' ? (
-          <span style={{ color: '#f0a0a0', paddingLeft: 20 }}>Falha. Áudio preservado.</span>
+          <span style={{ color: '#f0a0a0' }}>Falha. Áudio preservado.</span>
         ) : phase === 'processing' ? (
-          <span style={{ color: '#A8A4B5', paddingLeft: 20 }}>Transcrevendo…</span>
+          <>
+            <button onClick={() => window.dita.closePopup()} style={xBtn}>✕</button>
+            <span style={{ color: '#A8A4B5', paddingLeft: 20 }}>Transcrevendo…</span>
+          </>
         ) : (
-          <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} />
+          <>
+            <button onClick={() => window.dita.closePopup()} style={xBtn}>✕</button>
+            <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} />
+          </>
         )}
       </div>
     </div>

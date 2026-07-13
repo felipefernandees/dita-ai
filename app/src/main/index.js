@@ -19,23 +19,38 @@ const HELPER = app.isPackaged
 let rec, hotkeys, whisper, tray
 let targetApp = ''
 let recStartedAt = 0
+let cancelled = false      // Esc marcou este ditado como cancelado
+let pendingUndo = null     // texto guardado pra função Anular
+let wantUndo = false       // Anular clicado antes da transcrição terminar
 
 async function processDictation(webmBuffer) {
-  rec.send('rec:phase', 'processing')
+  const wasCancelled = cancelled
+  cancelled = false
+  if (!wasCancelled) rec.send('rec:phase', 'processing')
   try {
     const raw = await transcribe(webmBuffer, { port: whisper.port })
     const text = polish(raw, { dictionary: listDictionary(), snippets: listSnippets() })
-    if (!text) { rec.hide(); return }
+    if (!text) { rec.hideAnimated(); return }
 
     // REGRA DE OURO: salva ANTES de colar
     const row = saveDictation({ text, rawText: raw, appName: targetApp, durationMs: Date.now() - recStartedAt })
     tray.updateLastTranscript(row.text)
 
+    if (wasCancelled) {
+      // Esc: não cola. Guarda pra Anular; se o Felipe já clicou Anular, cola agora.
+      if (wantUndo) { wantUndo = false; await pasteText(text); rec.hideAnimated() }
+      else { pendingUndo = text; setTimeout(() => { pendingUndo = null }, 6000) }
+      return
+    }
+
     const pasted = await pasteText(text)
-    rec.expand() // janela cresce com animação pra caber texto + Copiar Ditado
-    rec.send('rec:result', { text })
-    if (pasted) setTimeout(() => rec.hideAnimated(), 4000) // Copiar Ditado fica à mão por 4s
-    // se não colou, o popup persiste com Copiar Ditado
+    if (pasted) {
+      rec.send('rec:result', { text, pasted: true })   // só confirma "Colado"
+      setTimeout(() => rec.hideAnimated(), 1100)
+    } else {
+      rec.expand()                                      // cresce pra caber texto + botão
+      rec.send('rec:result', { text, pasted: false })   // Copiar Ditado, persiste
+    }
   } catch (err) {
     console.error('pipeline:', err)
     rec.send('rec:phase', 'error')
@@ -82,15 +97,28 @@ app.whenReady().then(async () => {
       hotkeys.setRecordingState(true)
       rec.show()
       rec.send('rec:start')
+      rec.startVisibilityGuard() // reafirma o popup no topo enquanto grava
     },
     onStop: () => {
       hotkeys.setRecordingState(false)
+      rec.stopVisibilityGuard()
       rec.send('rec:stop') // renderer envia rec:audio quando fechar o MediaRecorder
     },
-    onCancel: () => {
+    onCancel: (reason) => {
       hotkeys.setRecordingState(false)
-      rec.hideAnimated() // rec:closing anima a saída; o releaseMic acontece no rec:cancel
-      rec.send('rec:cancel')
+      rec.stopVisibilityGuard()
+      if (reason === 'esc') {
+        // cancela mas permite Anular: pega o áudio, transcreve em segundo plano,
+        // mostra a tarja "Transcrição cancelada / Anular"
+        cancelled = true
+        wantUndo = false
+        rec.send('rec:stop')       // captura o áudio (keep=true no renderer)
+        rec.send('rec:cancelled')  // troca só a fase pra tarja
+        setTimeout(() => { if (!wantUndo) rec.hideAnimated() }, 6000)
+      } else {
+        rec.hideAnimated()
+        rec.send('rec:cancel')     // descarta o áudio
+      }
     }
   })
 
@@ -115,6 +143,10 @@ app.whenReady().then(async () => {
   ipcMain.on('rec:audio', (_e, buf) => processDictation(buf))
   ipcMain.on('rec:copy', (_e, text) => clipboard.writeText(text))
   ipcMain.on('rec:close', () => { machine.handle('esc'); rec.hideAnimated() })
+  ipcMain.on('rec:undo', async () => {
+    if (pendingUndo) { const t = pendingUndo; pendingUndo = null; await pasteText(t); rec.hideAnimated() }
+    else { wantUndo = true; rec.send('rec:phase', 'processing') } // transcrição ainda rodando: cola quando terminar
+  })
 
   async function restartWhisper(language) {
     setSetting('language', language)

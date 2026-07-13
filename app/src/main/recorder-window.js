@@ -17,6 +17,7 @@ export function createRecorderWindow({ getScale = () => 'm' } = {}) {
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
 
   let tween = null
+  let guard = null
   function scaleKey() { return REC[getScale()] ? getScale() : 'm' }
 
   function place(w, h) {
@@ -46,6 +47,16 @@ export function createRecorderWindow({ getScale = () => 'm' } = {}) {
   if (process.env['ELECTRON_RENDERER_URL']) win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   else win.loadFile(join(__dirname, '../renderer/index.html'))
 
+  function startGuard() {
+    if (guard) clearInterval(guard)
+    guard = setInterval(() => {
+      if (win.isDestroyed()) return
+      win.setAlwaysOnTop(true, 'screen-saver')
+      if (!win.isVisible()) win.showInactive()
+    }, 700)
+  }
+  function stopGuard() { if (guard) { clearInterval(guard); guard = null } }
+
   return {
     win,
     show() {
@@ -54,13 +65,16 @@ export function createRecorderWindow({ getScale = () => 'm' } = {}) {
       place(w, h)
       win.setAlwaysOnTop(true, 'screen-saver') // reafirma o topo (evita o sumiço)
       win.showInactive()
+      startGuard()
     },
     expand() { tweenWidth(RES[scaleKey()]) },
-    hide() { win.hide() },
+    startVisibilityGuard() {}, // compat: o guard agora vive no show/hide
+    stopVisibilityGuard() {},
+    hide() { stopGuard(); win.hide() },
     hideAnimated() {
-      if (!win.isVisible()) return
+      if (!win.isVisible()) { stopGuard(); return }
       win.webContents.send('rec:closing')
-      setTimeout(() => { if (!win.isDestroyed()) win.hide() }, 240)
+      setTimeout(() => { if (!win.isDestroyed()) { stopGuard(); win.hide() } }, 240)
     },
     send(channel, ...args) { win.webContents.send(channel, ...args) }
   }

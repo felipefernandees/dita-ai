@@ -20,10 +20,10 @@ export function createHotkeyMachine({ onStart, onStop, onCancel, now = () => Dat
     onStop()
   }
 
-  function cancel() {
+  function cancel(reason) {
     state = 'idle'
     source = null
-    onCancel()
+    onCancel(reason)
   }
 
   return {
@@ -36,13 +36,13 @@ export function createHotkeyMachine({ onStart, onStop, onCancel, now = () => Dat
         if (state === 'idle') start('ptt')
       } else if (event === 'ptt_up') {
         if (state === 'recording' && source === 'ptt') {
-          if (now() - startedAt < MIN_PTT_MS) cancel()
+          if (now() - startedAt < MIN_PTT_MS) cancel('short')
           else finish()
         }
       } else if (event === 'ptt_abort') {
-        if (state === 'recording' && source === 'ptt') cancel()
+        if (state === 'recording' && source === 'ptt') cancel('abort')
       } else if (event === 'esc') {
-        if (state === 'recording') cancel()
+        if (state === 'recording') cancel('esc')
       }
     }
   }

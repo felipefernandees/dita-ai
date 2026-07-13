@@ -6,7 +6,11 @@ function escapeRegExp(s) {
 
 export function polish(rawText, { dictionary = [], snippets = [] } = {}) {
   let text = String(rawText || '').replace(AUDIO_MARKERS, ' ')
+  // reticências que o whisper insere em silêncio: remove "...", "…" e afins
+  text = text.replace(/[.…]{2,}/g, ' ')
   text = text.replace(/\s+/g, ' ').trim()
+  // se sobrou só pontuação/espaço (ex: "." ou "…" de silêncio), descarta
+  if (/^[\s\p{P}\p{S}]*$/u.test(text)) return ''
   if (!text) return ''
 
   const normalized = text.toLowerCase().replace(/[.!?,;]+$/, '').trim()

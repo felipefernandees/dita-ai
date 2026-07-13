@@ -23,7 +23,10 @@ export function ensureModel() {
 export async function startWhisperServer({ modelPath = MODEL_PATH, language = 'pt', port = PORT } = {}) {
   const proc = spawn(WHISPER_SERVER, [
     '--model', modelPath, '--host', '127.0.0.1', '--port', String(port),
-    '--language', language, '--threads', '4'
+    '--language', language, '--threads', '4',
+    // qualidade: beam search + mais candidatos reduzem palavra quebrada
+    // (ex: "cancel amento"); entropy threshold evita fragmentar em pausas
+    '--beam-size', '5', '--best-of', '5', '--entropy-thold', '2.8'
   ], { stdio: ['ignore', 'pipe', 'pipe'] })
 
   // espera o server subir (modelo grande demora a carregar)
