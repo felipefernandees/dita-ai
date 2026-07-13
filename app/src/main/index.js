@@ -1,27 +1,20 @@
-import { app, BrowserWindow } from 'electron'
-import { join } from 'path'
+import { app, systemPreferences, ipcMain } from 'electron'
+import { createRecorderWindow } from './recorder-window.js'
 
-let popup = null
+// Wiring temporário da Task 6: auto-dispara uma gravação de 3s pra validar
+// captura de áudio + waveform. Substituído pelo pipeline real na Task 8.
+let rec = null
 
-function createPopup() {
-  popup = new BrowserWindow({
-    width: 280,
-    height: 72,
-    frame: false,
-    transparent: true,
-    alwaysOnTop: true,
-    focusable: false,
-    skipTaskbar: true,
-    show: true,
-    webPreferences: { preload: join(__dirname, '../preload/index.js') }
-  })
-  popup.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  if (process.env['ELECTRON_RENDERER_URL']) {
-    popup.loadURL(process.env['ELECTRON_RENDERER_URL'])
-  } else {
-    popup.loadFile(join(__dirname, '../renderer/index.html'))
-  }
-}
-
-app.whenReady().then(createPopup)
+app.whenReady().then(async () => {
+  const mic = await systemPreferences.askForMediaAccess('microphone')
+  console.log('mic access:', mic)
+  rec = createRecorderWindow()
+  ipcMain.on('rec:close', () => rec.hide())
+  ipcMain.on('rec:audio', (_e, buf) => console.log('audio bytes:', buf.byteLength))
+  setTimeout(() => {
+    rec.show()
+    rec.send('rec:start')
+    setTimeout(() => { rec.send('rec:stop'); setTimeout(() => rec.hide(), 1500) }, 3000)
+  }, 2500)
+})
 app.on('window-all-closed', () => {})
