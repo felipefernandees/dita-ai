@@ -17,6 +17,10 @@ export function createRecorderWindow() {
     webPreferences: { preload: join(__dirname, '../preload/index.js') }
   })
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  if (process.env.DITA_DEBUG) {
+    win.webContents.on('console-message', (_e, _l, m) => console.log('RENDERER:', m))
+    win.webContents.on('render-process-gone', (_e, d) => console.log('RENDERER GONE:', JSON.stringify(d)))
+  }
 
   let tween = null
   let guard = null

@@ -97,16 +97,13 @@ app.whenReady().then(async () => {
       hotkeys.setRecordingState(true)
       rec.show()
       rec.send('rec:start')
-      rec.startVisibilityGuard() // reafirma o popup no topo enquanto grava
     },
     onStop: () => {
       hotkeys.setRecordingState(false)
-      rec.stopVisibilityGuard()
       rec.send('rec:stop') // renderer envia rec:audio quando fechar o MediaRecorder
     },
     onCancel: (reason) => {
       hotkeys.setRecordingState(false)
-      rec.stopVisibilityGuard()
       if (reason === 'esc') {
         // cancela mas permite Anular: pega o áudio, transcreve em segundo plano,
         // mostra a tarja "Transcrição cancelada / Anular"
