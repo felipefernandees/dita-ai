@@ -48,7 +48,7 @@ async function processDictation(webmBuffer) {
       rec.send('rec:result', { text, pasted: true })   // só confirma "Colado"
       setTimeout(() => rec.hideAnimated(), 1100)
     } else {
-      rec.expand()                                      // cresce pra caber texto + botão
+      rec.expandResult()                                // vira o card grande
       rec.send('rec:result', { text, pasted: false })   // Copiar Ditado, persiste
     }
   } catch (err) {
@@ -113,6 +113,7 @@ app.whenReady().then(async () => {
         cancelled = true
         wantUndo = false
         rec.send('rec:stop')       // captura o áudio (keep=true no renderer)
+        rec.toast()                // dimensiona a tarja
         rec.send('rec:cancelled')  // troca só a fase pra tarja
         setTimeout(() => { if (!wantUndo) rec.hideAnimated() }, 6000)
       } else {
@@ -147,6 +148,8 @@ app.whenReady().then(async () => {
     if (pendingUndo) { const t = pendingUndo; pendingUndo = null; await pasteText(t); rec.hideAnimated() }
     else { wantUndo = true; rec.send('rec:phase', 'processing') } // transcrição ainda rodando: cola quando terminar
   })
+  ipcMain.on('rec:finish', () => machine.stopExternally())
+  ipcMain.on('rec:cancel-hard', () => machine.cancelExternally())
 
   async function restartWhisper(language) {
     setSetting('language', language)

@@ -1,15 +1,17 @@
 import { BrowserWindow, screen } from 'electron'
 import { join } from 'path'
 
-// Gravação = janela compacta (tight na pílula). Resultado = janela cresce com
-// animação até a largura expandida pra caber o texto + Copiar Ditado.
-const REC = { p: { w: 150, h: 36 }, m: { w: 190, h: 44 }, g: { w: 240, h: 54 } }
-const RES = { p: 252, m: 322, g: 382 }
-const MARGIN_BOTTOM = 42
+// Tamanhos fixos, clonados do Wispr Flow (sem personalização)
+const SIZE = {
+  rec: { w: 214, h: 40 },      // pílula de gravação
+  result: { w: 432, h: 188 },  // card "sem campo focado" + Copiar Ditado
+  toast: { w: 264, h: 44 }     // tarja "Transcrição cancelada / Anular"
+}
+const MARGIN_BOTTOM = 46
 
-export function createRecorderWindow({ getScale = () => 'm' } = {}) {
+export function createRecorderWindow() {
   const win = new BrowserWindow({
-    width: REC.m.w, height: REC.m.h,
+    width: SIZE.rec.w, height: SIZE.rec.h,
     frame: false, transparent: true, alwaysOnTop: true,
     focusable: false, skipTaskbar: true, show: false, resizable: false, hasShadow: false,
     webPreferences: { preload: join(__dirname, '../preload/index.js') }
@@ -18,7 +20,6 @@ export function createRecorderWindow({ getScale = () => 'm' } = {}) {
 
   let tween = null
   let guard = null
-  function scaleKey() { return REC[getScale()] ? getScale() : 'm' }
 
   function place(w, h) {
     const { workArea } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
@@ -29,23 +30,19 @@ export function createRecorderWindow({ getScale = () => 'm' } = {}) {
     })
   }
 
-  function tweenWidth(target) {
+  function tweenTo(w, h) {
     if (tween) { clearInterval(tween); tween = null }
-    const start = win.getBounds().width
-    const h = win.getBounds().height
-    if (start === target) return
-    const t0 = Date.now()
-    const dur = 170
+    const b = win.getBounds()
+    if (b.width === w && b.height === h) return
+    const sw = b.width, sh = b.height
+    const t0 = Date.now(), dur = 150
     tween = setInterval(() => {
       const p = Math.min(1, (Date.now() - t0) / dur)
-      const e = 1 - Math.pow(1 - p, 3) // easeOutCubic
-      place(Math.round(start + (target - start) * e), h)
+      const e = 1 - Math.pow(1 - p, 3)
+      place(Math.round(sw + (w - sw) * e), Math.round(sh + (h - sh) * e))
       if (p >= 1) { clearInterval(tween); tween = null }
     }, 10)
   }
-
-  if (process.env['ELECTRON_RENDERER_URL']) win.loadURL(process.env['ELECTRON_RENDERER_URL'])
-  else win.loadFile(join(__dirname, '../renderer/index.html'))
 
   function startGuard() {
     if (guard) clearInterval(guard)
@@ -53,28 +50,30 @@ export function createRecorderWindow({ getScale = () => 'm' } = {}) {
       if (win.isDestroyed()) return
       win.setAlwaysOnTop(true, 'screen-saver')
       if (!win.isVisible()) win.showInactive()
-    }, 700)
+      win.moveTop()
+    }, 600)
   }
   function stopGuard() { if (guard) { clearInterval(guard); guard = null } }
+
+  if (process.env['ELECTRON_RENDERER_URL']) win.loadURL(process.env['ELECTRON_RENDERER_URL'])
+  else win.loadFile(join(__dirname, '../renderer/index.html'))
 
   return {
     win,
     show() {
       if (tween) { clearInterval(tween); tween = null }
-      const { w, h } = REC[scaleKey()]
-      place(w, h)
-      win.setAlwaysOnTop(true, 'screen-saver') // reafirma o topo (evita o sumiço)
+      place(SIZE.rec.w, SIZE.rec.h)
+      win.setAlwaysOnTop(true, 'screen-saver')
       win.showInactive()
       startGuard()
     },
-    expand() { tweenWidth(RES[scaleKey()]) },
-    startVisibilityGuard() {}, // compat: o guard agora vive no show/hide
-    stopVisibilityGuard() {},
+    expandResult() { tweenTo(SIZE.result.w, SIZE.result.h) },
+    toast() { tweenTo(SIZE.toast.w, SIZE.toast.h) },
     hide() { stopGuard(); win.hide() },
     hideAnimated() {
       if (!win.isVisible()) { stopGuard(); return }
       win.webContents.send('rec:closing')
-      setTimeout(() => { if (!win.isDestroyed()) { stopGuard(); win.hide() } }, 150)
+      setTimeout(() => { if (!win.isDestroyed()) { stopGuard(); win.hide() } }, 130)
     },
     send(channel, ...args) { win.webContents.send(channel, ...args) }
   }

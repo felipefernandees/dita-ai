@@ -28,6 +28,9 @@ export function createHotkeyMachine({ onStart, onStop, onCancel, now = () => Dat
 
   return {
     state: () => state,
+    // acionados pelos botões do popup (check = finalizar, X = cancelar)
+    stopExternally() { if (state === 'recording') finish() },
+    cancelExternally() { if (state === 'recording') cancel('button') },
     handle(event) {
       if (event === 'toggle') {
         if (state === 'idle') start('toggle')

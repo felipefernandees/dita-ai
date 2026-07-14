@@ -66,40 +66,6 @@ function Toggle({ checked, onChange }) {
   )
 }
 
-const WAVE_COLORS = ['#F4F2EC', '#ECFF77', '#E9D8FD', '#C6F6D5', '#BDE2F8', '#f472b6', '#2dd4bf']
-const BG_COLORS = ['#221C33', '#16121F', '#0E0E0E', '#1e293b', '#3b2f1a', '#F4F2EC']
-const PREVIEW_W = { p: 150, m: 190, g: 240 }
-const PREVIEW_H = { p: 36, m: 44, g: 54 }
-
-// Prévia ao vivo do popup: reflete cor, arredondamento, tamanho e waveform na
-// hora em que o Felipe mexe nos controles
-function PopupPreview({ settings }) {
-  const scale = settings.popupScale || 'm'
-  const w = PREVIEW_W[scale], h = PREVIEW_H[scale]
-  const radius = settings.popupRadius != null ? Number(settings.popupRadius) : 999
-  const bg = settings.popupBg || '#221C33'
-  const wave = settings.waveColor || '#F4F2EC'
-  const bars = [5, 8, 12, 7, 15, 10, 18, 10, 15, 7, 12, 8, 5]
-  return (
-    <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 20px' }}>
-      <div style={{
-        width: w, height: h, borderRadius: radius, background: bg, position: 'relative',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        boxShadow: '0 6px 22px rgba(0,0,0,.4)', transition: 'border-radius .15s ease, background .2s ease, width .2s ease, height .2s ease'
-      }}>
-        <div style={{
-          position: 'absolute', left: 8, width: 18, height: 18, borderRadius: '50%',
-          background: '#2C2542', color: '#A8A4B5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9
-        }}>✕</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 3, height: '52%' }}>
-          {bars.map((bh, i) => (
-            <div key={i} style={{ width: 3, height: `${(bh / 18) * 100}%`, background: wave, borderRadius: 2 }} />
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
 
 function Config({ settings, mics, update }) {
   return (
@@ -133,71 +99,6 @@ function Config({ settings, mics, update }) {
         <div style={{ ...S.row, ...S.divider }}>
           <div style={S.sub}>
             <span style={S.kbd}>Esc</span> cancela a gravação · <span style={S.kbd}>⌃⌘V</span> cola o último ditado
-          </div>
-        </div>
-      </div>
-
-      <div style={S.kicker}>Aparência do popup</div>
-      <PopupPreview settings={settings} />
-      <div style={S.card}>
-        <div style={S.row}>
-          <div>
-            <div style={S.label}>Tamanho</div>
-            <div style={S.sub}>A pílula de gravação na parte de baixo da tela</div>
-          </div>
-          <select style={S.select} value={settings.popupScale || 'm'} onChange={(e) => update('popupScale', e.target.value)}>
-            <option value="p">Pequeno</option>
-            <option value="m">Médio</option>
-            <option value="g">Grande</option>
-          </select>
-        </div>
-        <div style={{ ...S.row, ...S.divider }}>
-          <div>
-            <div style={S.label}>Cor do waveform</div>
-            <div style={S.sub}>As barrinhas que dançam com a sua voz</div>
-          </div>
-          <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
-            {WAVE_COLORS.map((c) => (
-              <div key={c} onClick={() => update('waveColor', c)} style={{
-                width: 22, height: 22, borderRadius: '50%', background: c, cursor: 'pointer',
-                border: settings.waveColor === c ? `2px solid ${C.accent}` : `1px solid ${C.border}`,
-                boxSizing: 'border-box'
-              }} />
-            ))}
-            <input type="color" value={settings.waveColor || '#F4F2EC'} onChange={(e) => update('waveColor', e.target.value)}
-              style={{ width: 26, height: 26, border: 'none', background: 'transparent', cursor: 'pointer', padding: 0 }} title="Cor personalizada" />
-          </div>
-        </div>
-        <div style={{ ...S.row, ...S.divider }}>
-          <div>
-            <div style={S.label}>Cor de fundo</div>
-            <div style={S.sub}>O fundo da pílula de gravação</div>
-          </div>
-          <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
-            {BG_COLORS.map((c) => (
-              <div key={c} onClick={() => update('popupBg', c)} style={{
-                width: 22, height: 22, borderRadius: '50%', background: c, cursor: 'pointer',
-                border: settings.popupBg === c ? `2px solid ${C.accent}` : `1px solid ${C.border}`,
-                boxSizing: 'border-box'
-              }} />
-            ))}
-            <input type="color" value={settings.popupBg || '#221C33'} onChange={(e) => update('popupBg', e.target.value)}
-              style={{ width: 26, height: 26, border: 'none', background: 'transparent', cursor: 'pointer', padding: 0 }} title="Cor personalizada" />
-          </div>
-        </div>
-        <div style={{ ...S.row, ...S.divider }}>
-          <div>
-            <div style={S.label}>Arredondamento das bordas</div>
-            <div style={S.sub}>De quadrado a totalmente arredondado</div>
-          </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <input type="range" min="0" max="999" step="1"
-              value={settings.popupRadius != null ? settings.popupRadius : '999'}
-              onChange={(e) => update('popupRadius', e.target.value)}
-              style={{ width: 150, accentColor: C.accent }} />
-            <span style={{ ...S.kbd, minWidth: 34, textAlign: 'center' }}>
-              {Number(settings.popupRadius) >= 999 ? 'full' : `${settings.popupRadius}px`}
-            </span>
           </div>
         </div>
       </div>
