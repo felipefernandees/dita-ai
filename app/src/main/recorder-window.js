@@ -35,13 +35,13 @@ export function createRecorderWindow({ getScale = () => 'm' } = {}) {
     const h = win.getBounds().height
     if (start === target) return
     const t0 = Date.now()
-    const dur = 260
+    const dur = 170
     tween = setInterval(() => {
       const p = Math.min(1, (Date.now() - t0) / dur)
       const e = 1 - Math.pow(1 - p, 3) // easeOutCubic
       place(Math.round(start + (target - start) * e), h)
       if (p >= 1) { clearInterval(tween); tween = null }
-    }, 12)
+    }, 10)
   }
 
   if (process.env['ELECTRON_RENDERER_URL']) win.loadURL(process.env['ELECTRON_RENDERER_URL'])
@@ -74,7 +74,7 @@ export function createRecorderWindow({ getScale = () => 'm' } = {}) {
     hideAnimated() {
       if (!win.isVisible()) { stopGuard(); return }
       win.webContents.send('rec:closing')
-      setTimeout(() => { if (!win.isDestroyed()) { stopGuard(); win.hide() } }, 240)
+      setTimeout(() => { if (!win.isDestroyed()) { stopGuard(); win.hide() } }, 150)
     },
     send(channel, ...args) { win.webContents.send(channel, ...args) }
   }

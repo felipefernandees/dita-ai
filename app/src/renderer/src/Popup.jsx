@@ -34,21 +34,24 @@ export default function Popup() {
 
     canvas.width = canvas.clientWidth * devicePixelRatio
     canvas.height = canvas.clientHeight * devicePixelRatio
+    analyser.smoothingTimeConstant = 0.88 // resposta mais suave, menos "pulo"
     const ctx2d = canvas.getContext('2d')
     const data = new Uint8Array(analyser.frequencyBinCount)
     const W = canvas.width
     const H = canvas.height
     const dpr = devicePixelRatio
     const BAR_W = 3 * dpr
-    const GAP = 3 * dpr
-    const cx = W / 2
-    // margem lateral: acompanha o arredondamento E garante que o X (à esquerda)
-    // nunca fica coberto pelas barras
-    const cornerClear = Math.min(radiusRef.current * dpr, H / 2) + 6 * dpr
-    const xClear = 34 * dpr
-    const inset = Math.max(cornerClear, xClear)
-    const usable = W / 2 - inset
-    const half = Math.max(1, Math.floor((usable - GAP / 2) / (BAR_W + GAP)))
+    const GAP = 3.5 * dpr
+    // área útil = da direita do X até a margem da quina direita (preenche o resto)
+    const xClear = 32 * dpr
+    const cornerClear = Math.min(radiusRef.current * dpr, H / 2) + 5 * dpr
+    const left = xClear
+    const right = W - cornerClear
+    const center = (left + right) / 2
+    const halfW = (right - left) / 2
+    const half = Math.max(1, Math.floor((halfW - GAP / 2) / (BAR_W + GAP)))
+    // alturas suavizadas entre frames pra ficar mais fluido
+    const smooth = new Float32Array(half)
 
     let raf
     const loop = () => {
@@ -56,11 +59,15 @@ export default function Popup() {
       ctx2d.clearRect(0, 0, W, H)
       ctx2d.fillStyle = colorRef.current
       for (let i = 0; i < half; i++) {
-        const v = data[i] / 255
-        const h = Math.max(2 * dpr, v * H * 0.82)
+        // amostra espalhada pelo espectro; gamma 1.6 deixa menos sensível
+        const idx = Math.min(data.length - 1, Math.floor((i / half) * 22) + 1)
+        const v = Math.pow(data[idx] / 255, 1.6)
+        const target = Math.max(2 * dpr, v * H * 0.62)
+        smooth[i] += (target - smooth[i]) * 0.35
+        const h = smooth[i]
         const y = (H - h) / 2
-        ctx2d.fillRect(cx + GAP / 2 + i * (BAR_W + GAP), y, BAR_W, h)
-        ctx2d.fillRect(cx - GAP / 2 - BAR_W - i * (BAR_W + GAP), y, BAR_W, h)
+        ctx2d.fillRect(center + GAP / 2 + i * (BAR_W + GAP), y, BAR_W, h)
+        ctx2d.fillRect(center - GAP / 2 - BAR_W - i * (BAR_W + GAP), y, BAR_W, h)
       }
       raf = requestAnimationFrame(loop)
     }
@@ -127,8 +134,8 @@ export default function Popup() {
   const wrap = {
     position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
     opacity: shown ? 1 : 0,
-    transform: shown ? 'translateY(0) scale(1)' : 'translateY(14px) scale(0.9)',
-    transition: 'opacity .2s ease, transform .3s cubic-bezier(.2,.9,.25,1)'
+    transform: shown ? 'translateY(0) scale(1)' : 'translateY(10px) scale(0.92)',
+    transition: 'opacity .13s ease, transform .18s cubic-bezier(.22,.95,.3,1)'
   }
   const pill = {
     height: '100%', width: '100%', boxSizing: 'border-box',
@@ -161,8 +168,8 @@ export default function Popup() {
             </div>
           </>
         ) : phase === 'done' && pasted ? (
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#ECFF77', fontWeight: 600 }}>
-            <span style={{ fontSize: 14 }}>✓</span> Colado
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#F4F2EC', fontWeight: 600 }}>
+            <span style={{ fontSize: 13, color: '#A8A4B5' }}>✓</span> Colado
           </span>
         ) : phase === 'cancelled' ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingLeft: 4 }}>

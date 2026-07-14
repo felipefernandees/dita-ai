@@ -17,14 +17,14 @@ const MONO = "ui-monospace, 'SF Mono', Menlo, monospace"
 
 const S = {
   shell: { display: 'flex', height: '100vh', background: C.bg, color: C.text, fontFamily: FONT, overflow: 'hidden' },
-  sidebar: { width: 190, padding: '46px 12px 16px', boxSizing: 'border-box', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 3 },
-  brand: { display: 'flex', alignItems: 'center', gap: 9, padding: '0 12px 18px' },
+  sidebar: { width: 196, padding: '52px 14px 16px', boxSizing: 'border-box', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 3 },
+  brand: { display: 'flex', alignItems: 'center', gap: 9, padding: '0 12px 22px' },
   navItem: (active) => ({
-    padding: '9px 12px', borderRadius: 10, fontSize: 13.5, cursor: 'pointer', userSelect: 'none',
+    padding: '10px 13px', borderRadius: 10, fontSize: 13.5, cursor: 'pointer', userSelect: 'none',
     color: active ? C.text : C.muted, background: active ? C.hover : 'transparent',
     fontWeight: active ? 600 : 500, display: 'flex', alignItems: 'center', gap: 9, transition: 'background .12s'
   }),
-  content: { flex: 1, background: C.panel, borderLeft: `1px solid ${C.border}`, padding: '30px 34px', overflowY: 'auto' },
+  content: { flex: 1, background: C.panel, padding: '34px 40px', overflowY: 'auto' },
   h1: { fontSize: 25, fontWeight: 600, letterSpacing: '-0.02em', margin: '0 0 22px' },
   kicker: { fontFamily: MONO, fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: C.muted, margin: '0 0 10px 2px' },
   card: { background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '2px 18px', marginBottom: 16 },
