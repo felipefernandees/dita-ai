@@ -1,0 +1,23 @@
+// Defaults de atalho por plataforma. Consumido por index.js e pela UI de
+// Preferências (tarefas futuras) e pelo helper C# do Windows, que faz parse
+// dos valores literais aqui (ex.: --toggle=ctrl+shift+space, --ptt=rctrl) —
+// os valores abaixo são contrato, não apenas conveniência.
+const isWin = process.platform === 'win32'
+
+// Windows não entrega a tecla Fn ao WH_KEYBOARD_LL (o firmware do teclado a
+// consome), então fn+space não é portável. ctrl+shift+space é o default por
+// não colidir com o alternador de IME (ctrl+space) nem com o menu de janela
+// (alt+space).
+export const DEFAULT_TOGGLE = isWin ? 'ctrl+shift+space' : 'fn+space'
+
+// Right Alt é AltGr em teclado ABNT2 — usá-lo como push-to-talk quebraria
+// ç, º e ₢. Right Ctrl é o análogo seguro do Right Command do macOS.
+export const DEFAULT_PTT = isWin ? 'rctrl' : 'rcmd'
+
+export const TOGGLE_OPTIONS = isWin
+  ? ['ctrl+shift+space', 'ctrl+space', 'alt+space', 'f5']
+  : ['fn+space', 'opt+space', 'ctrl+space', 'f5']
+
+export const PTT_OPTIONS = isWin
+  ? ['rctrl', 'rshift', 'rwin']
+  : ['rcmd', 'ropt']
