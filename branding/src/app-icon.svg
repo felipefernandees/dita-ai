@@ -12,11 +12,12 @@
   </defs>
   <rect x="92" y="92" width="840" height="840" rx="188" fill="url(#bg)"/>
   <rect x="92" y="92" width="840" height="840" rx="188" fill="url(#sheen)"/>
+  <!-- waveform: mesma proporcao do lockup, escalada pra preencher o icone (barra alta = 2/3 do squircle) -->
   <g fill="#FFFFFF">
-    <rect x="312.2" y="388.50" width="54" height="247.0" rx="27"/>
-    <rect x="398.6" y="329.20" width="54" height="365.6" rx="27"/>
-    <rect x="485.0" y="282.50" width="54" height="459.0" rx="27"/>
-    <rect x="571.4" y="364.85" width="54" height="294.3" rx="27"/>
-    <rect x="657.8" y="405.90" width="54" height="212.2" rx="27"/>
+    <rect x="268.0" y="361.30" width="66" height="301.4" rx="33"/>
+    <rect x="373.5" y="289.00" width="66" height="446.0" rx="33"/>
+    <rect x="479.0" y="232.00" width="66" height="560.0" rx="33"/>
+    <rect x="584.5" y="332.50" width="66" height="359.0" rx="33"/>
+    <rect x="690.0" y="382.55" width="66" height="258.9" rx="33"/>
   </g>
 </svg>

@@ -30,7 +30,30 @@ export function initDb(dbPath) {
     );
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
   `)
+  seedDictionary()
   return db
+}
+
+// Nomes que o Whisper não tem como escrever certo nem com o vocabulário no
+// prompt, porque a fala é ambígua (sigla soletrada, marca com grafia torta).
+// Semeado só na primeira vez: o Felipe pode editar ou apagar à vontade.
+const DICIONARIO_BASE = [
+  ['m8n', 'n8n'], ['n8m', 'n8n'], ['N8N', 'n8n'],
+  ['whisper flow', 'Wispr Flow'], ['wisper flow', 'Wispr Flow'], ['super flow', 'Wispr Flow'],
+  ['supa base', 'Supabase'], ['super base', 'Supabase'],
+  ['rabbit mq', 'RabbitMQ'], ['versel', 'Vercel'], ['obsidiam', 'Obsidian'],
+  ['ia for business', 'IA4Business'], ['ia4 business', 'IA4Business']
+]
+
+function seedDictionary() {
+  const feito = db.prepare("SELECT value FROM settings WHERE key = 'dictionarySeeded'").get()
+  if (feito) return
+  const ins = db.prepare('INSERT INTO dictionary (term, replacement) VALUES (?, ?)')
+  const tx = db.transaction(() => {
+    for (const [term, replacement] of DICIONARIO_BASE) ins.run(term, replacement)
+    db.prepare("INSERT INTO settings (key, value) VALUES ('dictionarySeeded', '1')").run()
+  })
+  tx()
 }
 
 export function saveDictation({ text, rawText, appName, durationMs }) {

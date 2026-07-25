@@ -18,6 +18,8 @@ const HELPER = app.isPackaged
 
 let rec, hotkeys, whisper, tray
 let targetApp = ''
+const dlog = (m) => { if (process.env.DITA_DEBUG) { try { require('fs').appendFileSync(require('path').join(require('os').homedir(), 'dita-debug.log'), new Date().toISOString() + ' ' + m + '\n') } catch {} } }
+
 let recStartedAt = 0
 let cancelled = false      // Esc marcou este ditado como cancelado
 let pendingUndo = null     // texto guardado pra função Anular
@@ -43,7 +45,9 @@ async function processDictation(webmBuffer) {
       return
     }
 
+    const frontNow = await getFrontmostApp()
     const pasted = await pasteText(text)
+    dlog('paste: targetApp=' + targetApp + ' frontNow=' + frontNow + ' pasted=' + pasted)
     if (pasted) {
       rec.send('rec:result', { text, pasted: true })   // só confirma "Colado"
       setTimeout(() => rec.hideAnimated(), 1100)
@@ -66,6 +70,12 @@ function ckpt(tag) {
 // Instância única: se o app já roda e o Felipe abre de novo (Finder/Dock),
 // em vez de subir outra cópia, traz a janela de configurações pra frente.
 // Isso garante acesso às configurações mesmo com o ícone da barra escondido.
+// Reforço do backgroundThrottling: o Chromium também "desliga" renderers de
+// janelas sem foco/ocluídas por conta própria. Sem estes switches o popup
+// congela e some enquanto o Felipe fala em outro app.
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+app.commandLine.appendSwitch('disable-renderer-backgrounding')
+
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
@@ -99,10 +109,12 @@ app.whenReady().then(async () => {
       rec.send('rec:start')
     },
     onStop: () => {
+      dlog('onStop')
       hotkeys.setRecordingState(false)
       rec.send('rec:stop') // renderer envia rec:audio quando fechar o MediaRecorder
     },
     onCancel: (reason) => {
+      dlog('onCancel reason=' + reason)
       hotkeys.setRecordingState(false)
       if (reason === 'esc') {
         // cancela mas permite Anular: pega o áudio, transcreve em segundo plano,
@@ -145,8 +157,10 @@ app.whenReady().then(async () => {
     if (pendingUndo) { const t = pendingUndo; pendingUndo = null; await pasteText(t); rec.hideAnimated() }
     else { wantUndo = true; rec.send('rec:phase', 'processing') } // transcrição ainda rodando: cola quando terminar
   })
-  ipcMain.on('rec:finish', () => machine.stopExternally())
-  ipcMain.on('rec:cancel-hard', () => machine.cancelExternally())
+  ipcMain.on('rec:finish', () => { dlog('IPC rec:finish state=' + machine.state()); machine.stopExternally() })
+  ipcMain.on('rec:cancel-hard', () => { dlog('IPC rec:cancel-hard state=' + machine.state()); machine.cancelExternally() })
+  ipcMain.on('rec:audio', () => dlog('IPC rec:audio'))
+  ipcMain.on('rec:close', () => dlog('IPC rec:close'))
 
   async function restartWhisper(language) {
     setSetting('language', language)

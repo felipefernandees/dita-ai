@@ -14,9 +14,17 @@ export function createRecorderWindow() {
     width: SIZE.rec.w, height: SIZE.rec.h,
     frame: false, transparent: true, alwaysOnTop: true,
     focusable: false, skipTaskbar: true, show: false, resizable: false, hasShadow: false,
-    webPreferences: { preload: join(__dirname, '../preload/index.js') }
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      // a janela nunca recebe foco; sem isso o macOS a marca como ocluída,
+      // o Chromium congela o renderer e o popup para de pintar (some da tela)
+      // com a gravação ainda rolando
+      backgroundThrottling: false
+    }
   })
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  // visível em todos os espaços, inclusive por cima de apps em tela cheia;
+  // skipTransformProcessType evita o app "roubar" ativação e sumir de espaço
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true })
   if (process.env.DITA_DEBUG) {
     win.webContents.on('console-message', (_e, _l, m) => console.log('RENDERER:', m))
     win.webContents.on('render-process-gone', (_e, d) => console.log('RENDERER GONE:', JSON.stringify(d)))
@@ -53,9 +61,10 @@ export function createRecorderWindow() {
     guard = setInterval(() => {
       if (win.isDestroyed()) return
       win.setAlwaysOnTop(true, 'screen-saver')
+      win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true })
       if (!win.isVisible()) win.showInactive()
       win.moveTop()
-    }, 600)
+    }, 500)
   }
   function stopGuard() { if (guard) { clearInterval(guard); guard = null } }
 

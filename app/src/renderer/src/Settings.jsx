@@ -1,26 +1,28 @@
 import { useEffect, useMemo, useState } from 'react'
 
-// Paleta de PRODUTO (dark roxo) da ficha de branding conteudo/_brandings/dita-ai
+// Paleta neutra clonada do Wispr Flow: near-black e branco, zero cor saturada
 const C = {
-  bg: '#16121F',        // fundo app
-  panel: '#1B1626',     // painel/conteúdo
-  card: '#221C33',      // fundo app +1 (cards, popup)
-  hover: '#2C2542',     // fundo app +2 / hover
-  border: '#322B47',    // borda app
-  text: '#F4F2EC',      // texto primário
-  muted: '#A8A4B5',     // texto muted
-  accent: '#ECFF77',    // amarelo-limão (única cor saturada)
-  ink: '#0E0E0E'        // texto sobre o amarelo (sempre preto)
+  bg: '#131315',        // fundo app
+  panel: '#1a1a1c',     // painel/conteúdo
+  card: '#202022',      // cards
+  hover: '#2b2b2e',     // hover / campos
+  border: '#323235',    // borda
+  text: '#f5f5f7',      // texto primário
+  muted: '#8e8e93',     // texto muted
+  accent: '#f5f5f7',    // destaque = o próprio branco
+  ink: '#131315'        // texto sobre o branco
 }
 const FONT = "'General Sans', ui-sans-serif, system-ui, sans-serif"
 const MONO = "ui-monospace, 'SF Mono', Menlo, monospace"
 
 const S = {
   shell: { display: 'flex', height: '100vh', background: C.bg, color: C.text, fontFamily: FONT, overflow: 'hidden' },
-  sidebar: { width: 196, padding: '52px 14px 16px', boxSizing: 'border-box', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 3 },
+  // a sidebar inteira arrasta a janela (a barra de título nativa foi removida);
+  // itens clicáveis reativam o clique com WebkitAppRegion 'no-drag'
+  sidebar: { width: 196, padding: '52px 14px 16px', boxSizing: 'border-box', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 3, WebkitAppRegion: 'drag' },
   brand: { display: 'flex', alignItems: 'center', gap: 9, padding: '0 12px 22px' },
   navItem: (active) => ({
-    padding: '10px 13px', borderRadius: 10, fontSize: 13.5, cursor: 'pointer', userSelect: 'none',
+    padding: '10px 13px', borderRadius: 10, fontSize: 13.5, cursor: 'pointer', userSelect: 'none', WebkitAppRegion: 'no-drag',
     color: active ? C.text : C.muted, background: active ? C.hover : 'transparent',
     fontWeight: active ? 600 : 500, display: 'flex', alignItems: 'center', gap: 9, transition: 'background .12s'
   }),
@@ -36,18 +38,22 @@ const S = {
   kbd: { background: C.hover, border: `1px solid ${C.border}`, borderRadius: 6, padding: '2px 7px', fontSize: 12, color: C.text, fontFamily: MONO }
 }
 
-// Equalizador de 5 barras (símbolo da marca), proporção travada da ficha
+// Equalizador de 5 barras (símbolo da marca). Coordenadas copiadas do ícone
+// do app (conteudo/_brandings/dita-ai/assets/src-svg/app-icon.svg), com o
+// viewBox travado na caixa das barras: o símbolo aqui é o mesmo do ícone.
+const BARRAS = [
+  { x: 268.0, y: 361.30, h: 301.4 },
+  { x: 373.5, y: 289.00, h: 446.0 },
+  { x: 479.0, y: 232.00, h: 560.0 },
+  { x: 584.5, y: 332.50, h: 359.0 },
+  { x: 690.0, y: 382.55, h: 258.9 }
+]
 function Equalizer({ size = 20, color = C.accent }) {
-  const heights = [4.575, 6.77, 8.5, 5.45, 3.93]
-  const max = 8.5
-  const bw = size / 7
   return (
-    <svg width={size} height={size} viewBox="0 0 20 20" style={{ display: 'block' }}>
-      {heights.map((h, i) => {
-        const barH = (h / max) * 16
-        return <rect key={i} x={2 + i * (bw + bw * 0.6) / 1} width={bw} rx={bw / 2}
-          y={(20 - barH) / 2} height={barH} fill={color} />
-      })}
+    <svg height={size} width={size * (488 / 560)} viewBox="268 232 488 560" style={{ display: 'block' }}>
+      {BARRAS.map((b, i) => (
+        <rect key={i} x={b.x} y={b.y} width="66" height={b.h} rx="33" fill={color} />
+      ))}
     </svg>
   )
 }

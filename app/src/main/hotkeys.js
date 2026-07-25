@@ -1,4 +1,11 @@
 import { spawn } from 'child_process'
+import { appendFileSync } from 'fs'
+import { homedir } from 'os'
+import { join } from 'path'
+
+const DEBUG = !!process.env.DITA_DEBUG
+const LOG = join(homedir(), 'dita-debug.log')
+function dlog(m) { if (DEBUG) { try { appendFileSync(LOG, new Date().toISOString() + ' ' + m + '\n') } catch {} } }
 
 const MIN_PTT_MS = 300
 
@@ -63,9 +70,10 @@ export function startHotkeys({ helperPath, args = [], machine, onNoPermission = 
       if (!line) continue
       try {
         const { event } = JSON.parse(line)
+        dlog('helper event: ' + event + ' (state=' + machine.state() + ')')
         if (event === 'no_permission') onNoPermission()
         else if (event !== 'ready' && event !== 'combo') machine.handle(event)
-      } catch { /* linha inválida, ignora */ }
+      } catch { dlog('linha inválida do helper: ' + line) }
     }
   })
   return {

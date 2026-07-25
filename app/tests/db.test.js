@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { initDb, saveDictation, getLastDictation, listHistory, getSetting, setSetting } from '../src/main/db.js'
+import { initDb, saveDictation, getLastDictation, listHistory, listDictionary, getSetting, setSetting } from '../src/main/db.js'
 
 describe('db', () => {
   beforeEach(() => initDb(':memory:'))
@@ -27,5 +27,19 @@ describe('db', () => {
     expect(getSetting('language', 'pt')).toBe('pt')
     setSetting('language', 'en')
     expect(getSetting('language', 'pt')).toBe('en')
+  })
+})
+
+describe('dicionário base', () => {
+  it('semeia as correções de nome uma vez só e o polish aplica', async () => {
+    const { polish } = await import('../src/main/polish.js')
+    const db = initDb(':memory:')
+    const antes = listDictionary().length
+    expect(antes).toBeGreaterThan(0)
+    initDb(':memory:') // banco novo: semeia de novo
+    expect(listDictionary().length).toBe(antes)
+    expect(polish('eu uso o M8n e o super flow', { dictionary: listDictionary() }))
+      .toBe('Eu uso o n8n e o Wispr Flow')
+    db.close()
   })
 })

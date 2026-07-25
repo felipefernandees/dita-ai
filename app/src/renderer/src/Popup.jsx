@@ -12,6 +12,7 @@ export default function Popup() {
   const [result, setResult] = useState('')
   const [pasted, setPasted] = useState(false)
   const [shown, setShown] = useState(false)
+  const [session, setSession] = useState(0) // re-arma o equalizador a cada gravação
   const canvasRef = useRef(null)
   const mediaRef = useRef({})
 
@@ -33,20 +34,31 @@ export default function Popup() {
     const analyser = mediaRef.current.analyser
     if (!canvas || !analyser) return
 
-    canvas.width = canvas.clientWidth * devicePixelRatio
-    canvas.height = canvas.clientHeight * devicePixelRatio
     analyser.smoothingTimeConstant = 0.85
     const ctx = canvas.getContext('2d')
     const data = new Uint8Array(analyser.frequencyBinCount)
-    const W = canvas.width, H = canvas.height, dpr = devicePixelRatio
+    const dpr = devicePixelRatio
     const BAR = 3 * dpr, GAP = 3.5 * dpr
-    const cx = W / 2
-    const half = Math.max(1, Math.floor((W / 2 - GAP / 2) / (BAR + GAP)))
-    const smooth = new Float32Array(half)
+    let W = 0, H = 0, half = 0, smooth = new Float32Array(0)
+
+    // o canvas pode ainda não ter layout no primeiro frame: mede a cada volta
+    // e só desenha quando tiver largura, em vez de travar em zero pra sempre
+    const measure = () => {
+      const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr)
+      if (w === W && h === H) return half > 0
+      W = w; H = h
+      canvas.width = W; canvas.height = H
+      half = Math.max(0, Math.floor((W / 2 - GAP / 2) / (BAR + GAP)))
+      smooth = new Float32Array(half)
+      return half > 0
+    }
 
     let raf
     const loop = () => {
+      raf = requestAnimationFrame(loop)
+      if (!measure()) return
       analyser.getByteFrequencyData(data)
+      const cx = W / 2
       ctx.clearRect(0, 0, W, H)
       ctx.fillStyle = WHITE
       for (let i = 0; i < half; i++) {
@@ -59,11 +71,10 @@ export default function Popup() {
         ctx.fillRect(cx + GAP / 2 + i * (BAR + GAP), y, BAR, h)
         ctx.fillRect(cx - GAP / 2 - BAR - i * (BAR + GAP), y, BAR, h)
       }
-      raf = requestAnimationFrame(loop)
     }
     loop()
     return () => cancelAnimationFrame(raf)
-  }, [phase])
+  }, [phase, session])
 
   function releaseMic() {
     const m = mediaRef.current
@@ -94,8 +105,13 @@ export default function Popup() {
     const analyser = audioCtx.createAnalyser()
     analyser.fftSize = 64
     audioCtx.createMediaStreamSource(stream).connect(analyser)
-    const watchdog = setTimeout(() => stopRecording(true), 180000)
+    // Rede de segurança contra microfone preso, NÃO limite de fala: 30 min.
+    // Chama o mesmo caminho do botão check (pelo main), pra máquina de estado
+    // não ficar dessincronizada e o áudio ser transcrito e salvo, nunca jogado
+    // fora. O Felipe fala 3+ minutos direto: o limite não pode cortar ele.
+    const watchdog = setTimeout(() => window.dita.finish(), 30 * 60000)
     mediaRef.current = { recorder, stream, analyser, audioCtx, watchdog, keep: false }
+    setSession((n) => n + 1)
     setPhase('recording')
     requestAnimationFrame(() => setShown(true))
   }
@@ -119,14 +135,22 @@ export default function Popup() {
     alignItems: 'center', color: WHITE, fontFamily: "'General Sans', ui-sans-serif, system-ui, sans-serif",
     boxShadow: '0 10px 30px rgba(0,0,0,.5)', overflow: 'hidden'
   })
-  const circleX = {
-    background: XBG, color: '#d0d0d2', border: 0, borderRadius: '50%', width: 24, height: 24,
-    cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0
+  const circleBase = {
+    border: 0, borderRadius: '50%', width: 24, height: 24, cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0
   }
-  const circleCheck = {
-    background: WHITE, color: '#1a1a1c', border: 0, borderRadius: '50%', width: 24, height: 24,
-    cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0
-  }
+  const circleX = { ...circleBase, background: XBG }
+  const circleCheck = { ...circleBase, background: WHITE }
+  const IconX = (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#d0d0d2" strokeWidth="2.4" strokeLinecap="round">
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  )
+  const IconCheck = (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1a1a1c" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 12.5l4.2 4.2L19 7" />
+    </svg>
+  )
   const grayBtn = {
     background: BTN, color: WHITE, border: 0, borderRadius: 9, padding: '7px 15px',
     cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit', flexShrink: 0
@@ -150,7 +174,7 @@ export default function Popup() {
           <span style={{ flex: 1, color: GRAY, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             Selecione uma caixa de texto e cole com o botão
           </span>
-          <button onClick={() => window.dita.closePopup()} style={circleX}>✕</button>
+          <button onClick={() => window.dita.closePopup()} style={circleX}>{IconX}</button>
         </div>
         <div style={{ flex: 1, width: '100%', fontSize: 17, lineHeight: 1.35, overflow: 'hidden' }}>{result}</div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
@@ -161,7 +185,9 @@ export default function Popup() {
   } else if (phase === 'done' && pasted) {
     body = (
       <div style={{ ...container(false), padding: '0 14px', justifyContent: 'center', gap: 8 }}>
-        <span style={{ color: GRAY, fontSize: 13 }}>✓</span>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={GRAY} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M5 12.5l4.2 4.2L19 7" />
+        </svg>
         <span style={{ fontSize: 13, fontWeight: 600 }}>Colado</span>
       </div>
     )
@@ -181,7 +207,7 @@ export default function Popup() {
   } else if (phase === 'processing') {
     body = (
       <div style={{ ...container(false), padding: '0 10px', gap: 10 }}>
-        <button onClick={() => window.dita.cancelHard()} style={circleX}>✕</button>
+        <button onClick={() => window.dita.cancelHard()} style={circleX}>{IconX}</button>
         <span style={{ flex: 1, textAlign: 'center', color: GRAY, fontSize: 13 }}>Transcrevendo…</span>
         <div style={{ width: 24, flexShrink: 0 }} />
       </div>
@@ -189,9 +215,9 @@ export default function Popup() {
   } else {
     body = (
       <div style={{ ...container(false), padding: '0 10px', gap: 8 }}>
-        <button onClick={() => window.dita.cancelHard()} style={circleX}>✕</button>
+        <button onClick={() => window.dita.cancelHard()} style={circleX}>{IconX}</button>
         <canvas ref={canvasRef} style={{ flex: 1, height: '100%' }} />
-        <button onClick={() => window.dita.finish()} style={circleCheck}>✓</button>
+        <button onClick={() => window.dita.finish()} style={circleCheck}>{IconCheck}</button>
       </div>
     )
   }

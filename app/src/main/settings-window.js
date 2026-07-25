@@ -17,7 +17,11 @@ export function openSettingsWindow() {
     title: 'Dita Aí',
     resizable: true,
     fullscreenable: false,
-    backgroundColor: '#16121F',
+    // sem barra de título: os semáforos flutuam sobre o próprio conteúdo
+    // (a sidebar já reserva o topo pra eles)
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 18, y: 18 },
+    backgroundColor: '#131315',
     webPreferences: { preload: join(__dirname, '../preload/index.js') }
   })
   win.setMenuBarVisibility(false)
