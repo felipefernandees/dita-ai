@@ -104,28 +104,50 @@ Esperado: termina sem erro. O `postinstall` roda `electron-builder install-app-d
 
 - [ ] **Step 4: Verificar que o better-sqlite3 carregou de verdade**
 
-O prebuild pode faltar e o npm ainda assim sair com código 0. Testar o carregamento real:
+O prebuild pode faltar e o npm ainda assim sair com código 0. Testar o carregamento real.
+
+`ELECTRON_RUN_AS_NODE=1` não é opcional aqui: sem ele o `electron` abre uma janela GUI e o comando nunca retorna.
 
 ```bash
-cd app && npx electron -e "process.exit(require('better-sqlite3') ? 0 : 1)"
+cd app && ELECTRON_RUN_AS_NODE=1 npx electron -e "require('better-sqlite3'); console.log('better-sqlite3 OK')"
 ```
 
-Esperado: exit code 0, sem `NODE_MODULE_VERSION` mismatch nem `was compiled against a different Node.js version`.
+Esperado: imprime `better-sqlite3 OK`, sem `NODE_MODULE_VERSION` mismatch nem `was compiled against a different Node.js version`.
 
 Se falhar: instalar as VS Build Tools (`winget install Microsoft.VisualStudio.2022.BuildTools --override "--quiet --add Microsoft.VisualStudio.Workload.VCTools"`) e rodar `npx electron-rebuild -f -w better-sqlite3`.
 
-- [ ] **Step 5: Rodar a suíte existente como baseline**
+- [ ] **Step 5: Consertar o runner de teste no Windows**
+
+O script `test` do `package.json` usa a sintaxe POSIX de variável inline (`VAR=x comando`). O `npm` no Windows roda scripts pelo `cmd.exe`, que não entende isso e falha com:
+
+```
+'ELECTRON_RUN_AS_NODE' não é reconhecido como um comando interno ou externo
+```
+
+```bash
+cd app && npm install --save-dev cross-env@^7.0.3
+```
+
+Em `app/package.json`, trocar o script `test`:
+
+```json
+    "test": "cross-env ELECTRON_RUN_AS_NODE=1 electron node_modules/vitest/vitest.mjs run",
+```
+
+`cross-env` funciona igual nas duas plataformas — o Mac não regride.
+
+- [ ] **Step 6: Rodar a suíte existente como baseline**
 
 ```bash
 cd app && npm test
 ```
 
-Anotar quais testes passam **antes** de qualquer mudança. `whisper.integration.test.js` está atrás de `RUN_WHISPER=1` e vai aparecer como `skipped` — a Task 8 o torna cross-platform. Não seguir sem saber o baseline.
+Baseline medido em 25/07/2026 nesta máquina: **25 passed, 1 skipped** (`whisper.integration.test.js`, atrás de `RUN_WHISPER=1` — a Task 8 o torna cross-platform). Nenhuma task pode fazer esse número regredir.
 
-- [ ] **Step 6: Commit do estado inicial**
+- [ ] **Step 7: Commit do estado inicial**
 
 ```bash
-git add -A && git commit --allow-empty -m "chore: baseline do port Windows"
+git add -A && git commit -m "chore: fix test runner on Windows, baseline for the port"
 ```
 
 ---

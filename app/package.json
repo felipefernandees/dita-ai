@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "test": "ELECTRON_RUN_AS_NODE=1 electron node_modules/vitest/vitest.mjs run",
+    "test": "cross-env ELECTRON_RUN_AS_NODE=1 electron node_modules/vitest/vitest.mjs run",
     "build:mac": "electron-vite build && electron-builder --mac",
     "postinstall": "electron-builder install-app-deps"
   },
@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
+    "cross-env": "^7.0.3",
     "electron": "^34.0.0",
     "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
