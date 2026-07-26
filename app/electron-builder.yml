@@ -6,13 +6,13 @@ directories:
   output: dist
 files:
   - out/**
-extraResources:
-  - from: ../helper/dita-hotkeys
-    to: dita-hotkeys
-  - from: resources/trayTemplate.png
-    to: trayTemplate.png
-  - from: resources/trayTemplate@2x.png
-    to: trayTemplate@2x.png
+
+# extraResources fica DENTRO de cada plataforma, não na raiz: o helper do mac
+# (../helper/dita-hotkeys, Swift) só existe depois de um build no macOS, e o do
+# Windows (../helper-win/dist/dita-helper.exe, .NET) só depois de um build no
+# Windows. Declarados na raiz, cada plataforma tentaria copiar o binário da
+# outra e o build quebraria com ENOENT.
+
 mac:
   icon: build/icon.icns
   category: public.app-category.productivity
@@ -23,3 +23,31 @@ mac:
     NSMicrophoneUsageDescription: O Dita Aí usa o microfone para transcrever sua fala.
     LSUIElement: false
   hardenedRuntime: false
+  extraResources:
+    - from: ../helper/dita-hotkeys
+      to: dita-hotkeys
+    - from: resources/trayTemplate.png
+      to: trayTemplate.png
+    - from: resources/trayTemplate@2x.png
+      to: trayTemplate@2x.png
+
+win:
+  icon: build/icon.ico
+  target:
+    - nsis
+  # sem certificado de assinatura de código: o SmartScreen vai avisar na
+  # primeira execução, igual ao Gatekeeper no Mac
+  extraResources:
+    - from: ../helper-win/dist/dita-helper.exe
+      to: dita-helper.exe
+    - from: resources/win/tray.ico
+      to: tray.ico
+    - from: resources/win/whisper
+      to: whisper
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: Dita Aí
