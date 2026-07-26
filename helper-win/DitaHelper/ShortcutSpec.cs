@@ -33,12 +33,18 @@ internal sealed class ToggleSpec
 
 internal static class PttSpec
 {
+    // Espelha PTT_OPTIONS de defaults.js — os valores são contrato entre as
+    // duas camadas, então o que a UI não oferece o parser não reconhece.
+    //
     // "ralt" existe como opção mas nunca é o default no Windows: em teclado
     // ABNT2 o Right Alt é o AltGr, usado para ç, º, ₢.
+    //
+    // "rwin" saiu de propósito: um toque solto abre o menu Iniciar e teclas de
+    // PTT nunca são suprimidas. Cair no default (rctrl) é melhor do que honrar
+    // uma configuração antiga e deixar o push-to-talk quebrado.
     public static int Parse(string spec) => spec switch
     {
         "rshift" => Native.VK_RSHIFT,
-        "rwin" => Native.VK_RWIN,
         "ralt" => Native.VK_RMENU,
         _ => Native.VK_RCONTROL
     };
