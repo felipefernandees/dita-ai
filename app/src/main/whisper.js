@@ -1,17 +1,21 @@
-import { spawn, execFile, execFileSync } from 'child_process'
-import { writeFile, unlink, readFile } from 'fs/promises'
-import { existsSync, mkdirSync } from 'fs'
-import { homedir, tmpdir } from 'os'
+import { spawn, execFile } from 'child_process'
+import { writeFile, unlink, readFile, rename } from 'fs/promises'
+import { createWriteStream, existsSync, mkdirSync } from 'fs'
+import { tmpdir } from 'os'
 import { join } from 'path'
+import { pipeline } from 'stream/promises'
+import { Readable } from 'stream'
+import { modelDir } from './paths.js'
+import { ffmpegPath, whisperServerCandidates } from './binaries.js'
 
-const FFMPEG = '/opt/homebrew/bin/ffmpeg'
-const WHISPER_SERVER = '/opt/homebrew/opt/whisper-cpp/bin/whisper-server'
-const MODEL_DIR = join(homedir(), 'Library/Application Support/dita-ai/models')
 // large-v3-turbo sem quantização: mesma velocidade do q5_0 no Apple Silicon,
-// com menos erro de palavra parecida. Pesa 1,6GB de RAM (folga num M4/16GB).
-export const MODEL_PATH = join(MODEL_DIR, 'ggml-large-v3-turbo.bin')
+// com menos erro de palavra parecida. Pesa 1,6GB de RAM.
+const MODEL_FILE = 'ggml-large-v3-turbo.bin'
 const MODEL_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin'
 const PORT = 8971
+
+// função, não constante: modelDir() depende de env que só existe em runtime
+export function modelPath() { return join(modelDir(), MODEL_FILE) }
 
 // Contexto que o Whisper lê antes de decodificar. É o que faz ele escolher
 // "Wispr Flow" em vez de "super flow": sem isso ele só conhece o dicionário
@@ -28,18 +32,34 @@ const VOCABULARIO = [
   'prompt, endpoint, LLM, MCP, API, landing page, carrossel, reels, funil, lead, copy.'
 ].join(' ')
 
-export function ensureModel() {
-  if (!existsSync(MODEL_PATH)) {
-    mkdirSync(MODEL_DIR, { recursive: true })
-    execFileSync('curl', ['-L', '-o', MODEL_PATH + '.part', MODEL_URL], { stdio: 'inherit' })
-    execFileSync('mv', [MODEL_PATH + '.part', MODEL_PATH])
-  }
-  return MODEL_PATH
+// Download em stream com arquivo .part: uma queda de rede no meio não deixa
+// um modelo truncado de 1,6GB parecendo válido no disco.
+export async function ensureModel() {
+  const target = modelPath()
+  if (existsSync(target)) return target
+
+  mkdirSync(modelDir(), { recursive: true })
+  const partial = target + '.part'
+
+  const res = await fetch(MODEL_URL)
+  if (!res.ok) throw new Error(`download do modelo falhou: HTTP ${res.status}`)
+  await pipeline(Readable.fromWeb(res.body), createWriteStream(partial))
+  await rename(partial, target)
+
+  return target
 }
 
-export async function startWhisperServer({ modelPath = MODEL_PATH, language = 'pt', port = PORT } = {}) {
-  const proc = spawn(WHISPER_SERVER, [
-    '--model', modelPath, '--host', '127.0.0.1', '--port', String(port),
+export async function startWhisperServer({
+  binPath,
+  modelPath: model = modelPath(),
+  language = 'pt',
+  port = PORT
+} = {}) {
+  const bin = binPath || whisperServerCandidates()[0]
+  if (!bin) throw new Error('nenhum whisper-server encontrado: rode `npm run deps:win`')
+
+  const proc = spawn(bin, [
+    '--model', model, '--host', '127.0.0.1', '--port', String(port),
     '--language', language, '--threads', '4',
     // qualidade: beam search + mais candidatos reduzem palavra quebrada
     // (ex: "cancel amento"); entropy threshold evita fragmentar em pausas
@@ -60,7 +80,26 @@ export async function startWhisperServer({ modelPath = MODEL_PATH, language = 'p
     } catch { await new Promise((r) => setTimeout(r, 500)) }
   }
   proc.kill()
-  throw new Error('whisper-server não subiu em 60s')
+  throw new Error(`whisper-server (${bin}) não subiu em 60s`)
+}
+
+// Tenta cada variante na ordem de whisperServerCandidates() (Vulkan, depois
+// CPU). Uma GPU sem driver Vulkan faz o processo morrer no boot; nesse caso
+// não há erro de rede a distinguir, então simplesmente tentamos a próxima.
+export async function startWhisperServerWithFallback(opts = {}) {
+  const candidates = whisperServerCandidates()
+  if (!candidates.length) throw new Error('nenhum whisper-server encontrado: rode `npm run deps:win`')
+
+  let lastError
+  for (const binPath of candidates) {
+    try {
+      return await startWhisperServer({ ...opts, binPath })
+    } catch (err) {
+      lastError = err
+      console.error(`whisper-server falhou em ${binPath}:`, err.message)
+    }
+  }
+  throw lastError
 }
 
 async function webmToWav(webmBuffer) {
@@ -69,7 +108,7 @@ async function webmToWav(webmBuffer) {
   const wav = `${base}.wav`
   await writeFile(webm, Buffer.from(webmBuffer))
   await new Promise((resolve, reject) => {
-    execFile(FFMPEG, ['-y', '-i', webm, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wav],
+    execFile(ffmpegPath(), ['-y', '-i', webm, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wav],
       (err) => (err ? reject(err) : resolve()))
   })
   await unlink(webm).catch(() => {})

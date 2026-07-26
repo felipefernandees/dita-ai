@@ -1,18 +1,16 @@
 import { app, ipcMain, clipboard, systemPreferences, Notification } from 'electron'
 import { join } from 'path'
-import { homedir } from 'os'
 import { mkdirSync } from 'fs'
 import { createRecorderWindow } from './recorder-window.js'
 import { createHotkeyMachine, startHotkeys } from './hotkeys.js'
-import { ensureModel, startWhisperServer, transcribe } from './whisper.js'
+import { ensureModel, startWhisperServerWithFallback, transcribe } from './whisper.js'
 import { initDb, saveDictation, getLastDictation, listHistory, listDictionary, listSnippets, getSetting, setSetting } from './db.js'
 import { polish } from './polish.js'
 import { getFrontmostApp, pasteText } from './paster.js'
 import { createTray } from './tray.js'
 import { openSettingsWindow } from './settings-window.js'
 import { helperPath } from './helper-path.js'
-
-const DATA_DIR = join(homedir(), 'Library/Application Support/dita-ai')
+import { dataDir, dbPath } from './paths.js'
 
 let rec, hotkeys, whisper, tray
 let targetApp = ''
@@ -84,8 +82,8 @@ if (!gotLock) {
 
 app.whenReady().then(async () => {
   ckpt('ready')
-  mkdirSync(DATA_DIR, { recursive: true })
-  initDb(join(DATA_DIR, 'dita.db'))
+  mkdirSync(dataDir(), { recursive: true })
+  initDb(dbPath())
   ckpt('db')
   // não-bloqueante: se o prompt de mic ficar aberto, o resto do app sobe mesmo assim
   systemPreferences.askForMediaAccess('microphone').catch(() => {})
@@ -93,9 +91,9 @@ app.whenReady().then(async () => {
 
   rec = createRecorderWindow({ getScale: () => getSetting('popupScale', 'm') })
   ckpt('recorder-window')
-  ensureModel()
+  await ensureModel()
   ckpt('model')
-  whisper = await startWhisperServer({ language: getSetting('language', 'pt') })
+  whisper = await startWhisperServerWithFallback({ language: getSetting('language', 'pt') })
   ckpt('whisper')
 
   const machine = createHotkeyMachine({
@@ -163,7 +161,7 @@ app.whenReady().then(async () => {
   async function restartWhisper(language) {
     setSetting('language', language)
     whisper.kill()
-    whisper = await startWhisperServer({ language })
+    whisper = await startWhisperServerWithFallback({ language })
   }
 
   ipcMain.handle('settings:get-all', () => ({
