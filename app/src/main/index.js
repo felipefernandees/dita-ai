@@ -10,11 +10,9 @@ import { polish } from './polish.js'
 import { getFrontmostApp, pasteText } from './paster.js'
 import { createTray } from './tray.js'
 import { openSettingsWindow } from './settings-window.js'
+import { helperPath } from './helper-path.js'
 
 const DATA_DIR = join(homedir(), 'Library/Application Support/dita-ai')
-const HELPER = app.isPackaged
-  ? join(process.resourcesPath, 'dita-hotkeys')
-  : join(__dirname, '../../../helper/dita-hotkeys')
 
 let rec, hotkeys, whisper, tray
 let targetApp = ''
@@ -138,7 +136,7 @@ app.whenReady().then(async () => {
     `--ptt=${getSetting('pttShortcut', 'rcmd')}`
   ]
   hotkeys = startHotkeys({
-    helperPath: HELPER,
+    helperPath: helperPath(),
     args: helperArgs(),
     machine,
     onNoPermission: () => {
@@ -190,7 +188,7 @@ app.whenReady().then(async () => {
     }
     if (key === 'toggleShortcut' || key === 'pttShortcut') {
       hotkeys.kill()
-      hotkeys = startHotkeys({ helperPath: HELPER, args: helperArgs(), machine, onNoPermission: () => {} })
+      hotkeys = startHotkeys({ helperPath: helperPath(), args: helperArgs(), machine, onNoPermission: () => {} })
     }
   })
   ipcMain.handle('history:list', () => listHistory(300))
