@@ -14,10 +14,13 @@ export const DEFAULT_TOGGLE = isWin ? 'ctrl+shift+space' : 'fn+space'
 // ç, º e ₢. Right Ctrl é o análogo seguro do Right Command do macOS.
 export const DEFAULT_PTT = isWin ? 'rctrl' : 'rcmd'
 
-export const TOGGLE_OPTIONS = isWin
+// Congeladas: são singletons de módulo, e o consumidor previsto é um <select>
+// no renderer. Um `.sort()` sem cópia lá corromperia a lista para o processo
+// inteiro — inclusive quebrando a invariante "o default está entre as opções".
+export const TOGGLE_OPTIONS = Object.freeze(isWin
   ? ['ctrl+shift+space', 'ctrl+space', 'alt+space', 'f5']
-  : ['fn+space', 'opt+space', 'ctrl+space', 'f5']
+  : ['fn+space', 'opt+space', 'ctrl+space', 'f5'])
 
-export const PTT_OPTIONS = isWin
+export const PTT_OPTIONS = Object.freeze(isWin
   ? ['rctrl', 'rshift', 'rwin']
-  : ['rcmd', 'ropt']
+  : ['rcmd', 'ropt'])

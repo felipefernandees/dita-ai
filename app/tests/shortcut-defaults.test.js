@@ -44,4 +44,16 @@ describe('defaults de atalho', () => {
     expect(DEFAULT_TOGGLE).toBe('fn+space')
     expect(DEFAULT_PTT).toBe('rcmd')
   })
+
+  // As listas são singletons de módulo. Um `.sort()` sem cópia no <select> das
+  // Preferências corromperia a ordem para o processo inteiro.
+  it('as listas de opções são imutáveis', async () => {
+    const { TOGGLE_OPTIONS, PTT_OPTIONS } = await loadDefaultsFor('win32')
+    for (const lista of [TOGGLE_OPTIONS, PTT_OPTIONS]) {
+      const antes = [...lista]
+      expect(() => lista.push('invadido')).toThrow(TypeError)
+      expect(() => lista.reverse()).toThrow(TypeError)
+      expect([...lista]).toEqual(antes)
+    }
+  })
 })
