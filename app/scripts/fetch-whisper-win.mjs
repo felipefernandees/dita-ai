@@ -1,5 +1,5 @@
 // Baixa os binários oficiais do whisper.cpp e os deixa em
-// app/resources/win/whisper/{vulkan,cpu}/whisper-server.exe (+ DLLs).
+// app/resources/win/whisper/{blas,cpu}/whisper-server.exe (+ DLLs).
 // Os nomes dos assets mudam entre releases, então casamos por regex e
 // imprimimos o que foi escolhido — assim, quando um release renomear as
 // coisas, o log já mostra contra o que ajustar o regex.
@@ -20,12 +20,15 @@ const API = 'https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest'
 const FLAVORS = [
   // O upstream NÃO publica build Vulkan para Windows — conferimos os 30
   // releases mais recentes (v1.4.3 até v1.9.1) e nenhum traz asset com esse
-  // nome; os únicos acelerados são os cublas-*, que são NVIDIA e pesam
-  // 280MB/680MB. Deixamos a entrada aqui, opcional, para que no dia em que
-  // publicarem um build Vulkan o `npm run deps:win` passe a pegá-lo sozinho,
-  // sem tocar em código. Enquanto isso a pasta simplesmente não é criada e
-  // binaries.js cai direto no candidato de CPU.
-  { name: 'vulkan', match: /vulkan/i, required: false },
+  // nome. Os únicos acelerados de verdade são os cublas-*, que exigem GPU
+  // NVIDIA (a máquina alvo tem um Radeon integrado, então cuBLAS não serve) e
+  // pesam 280MB/680MB. O que sobra é o build BLAS: acelera a matemática de
+  // matriz na CPU via OpenBLAS, sem depender de driver de GPU nenhum — é
+  // opcional (required: false) porque é a única variação que depende de uma
+  // DLL de terceiro (OpenBLAS) presente no zip; se um release futuro parar de
+  // publicá-la ou a DLL não carregar numa máquina específica, o fallback pro
+  // build `cpu` puro em binaries.js cobre o caso.
+  { name: 'blas', match: /^whisper-blas-bin-x64\.zip$/i, required: false },
   // Único build x64 que roda em qualquer máquina, sem depender de GPU nem de
   // runtime de terceiros. É o piso obrigatório: sem ele o app não transcreve.
   { name: 'cpu', match: /^whisper-bin-x64\.zip$/i, required: true }

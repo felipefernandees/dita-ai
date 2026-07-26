@@ -83,9 +83,13 @@ export async function startWhisperServer({
   throw new Error(`whisper-server (${bin}) não subiu em 60s`)
 }
 
-// Tenta cada variante na ordem de whisperServerCandidates() (Vulkan, depois
-// CPU). Uma GPU sem driver Vulkan faz o processo morrer no boot; nesse caso
-// não há erro de rede a distinguir, então simplesmente tentamos a próxima.
+// Tenta cada variante na ordem de whisperServerCandidates() (BLAS, depois
+// CPU puro). BLAS depende da DLL do OpenBLAS que vem no zip: se ela não
+// carregar (falta de instrução de CPU compatível, DLL ausente por algum
+// motivo, release futuro que pare de publicar o asset blas) o processo morre
+// no boot sem erro de rede nenhum pra distinguir — por isso qualquer falha
+// aqui, exceto as que sabidamente não são específicas de backend (ver
+// startWhisperServerWithFallback), simplesmente tenta o próximo candidato.
 export async function startWhisperServerWithFallback(opts = {}) {
   const candidates = whisperServerCandidates()
   if (!candidates.length) throw new Error('nenhum whisper-server encontrado: rode `npm run deps:win`')

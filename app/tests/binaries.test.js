@@ -23,9 +23,14 @@ describe('binaries', () => {
     const c = whisperServerCandidates()
     expect(Array.isArray(c)).toBe(true)
     if (process.platform === 'win32') {
-      const idxVulkan = c.findIndex((p) => p.includes('vulkan'))
+      const idxBlas = c.findIndex((p) => p.includes('blas'))
       const idxCpu = c.findIndex((p) => p.includes('cpu'))
-      if (idxVulkan >= 0 && idxCpu >= 0) expect(idxVulkan).toBeLessThan(idxCpu)
+      // Depois de `npm run deps:win` as duas pastas existem de verdade (blas
+      // é opcional só no download, não no teste): se só uma aparecer aqui, o
+      // fetch não rodou ou quebrou, e é isso que queremos pegar.
+      expect(idxBlas).toBeGreaterThanOrEqual(0)
+      expect(idxCpu).toBeGreaterThanOrEqual(0)
+      expect(idxBlas).toBeLessThan(idxCpu)
     } else {
       expect(c[0]).toContain('whisper-server')
     }

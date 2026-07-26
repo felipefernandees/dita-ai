@@ -26,8 +26,12 @@ export function ffmpegPath() {
   return String(ffmpegStatic).replace('app.asar', 'app.asar.unpacked')
 }
 
-// Ordem de preferência. O chamador tenta um a um: se o build Vulkan não subir
-// (driver sem suporte, GPU sem Vulkan), o build CPU assume.
+// Ordem de preferência. BLAS não é aceleração de GPU — é a mesma CPU fazendo
+// a álgebra de matriz via OpenBLAS, mais rápido que o build ingênuo. O
+// chamador tenta um a um porque o build BLAS depende de uma DLL de terceiro
+// (a do OpenBLAS) que pode não estar presente (release futuro parou de
+// publicar o asset `blas`) ou não carregar numa máquina específica; nesse
+// caso o build `cpu` puro, sem dependência nenhuma além do Windows, assume.
 export function whisperServerCandidates() {
   if (process.env.DITA_WHISPER_SERVER) return [process.env.DITA_WHISPER_SERVER]
   if (!isWin) return ['/opt/homebrew/opt/whisper-cpp/bin/whisper-server']
@@ -36,7 +40,7 @@ export function whisperServerCandidates() {
     ? join(process.resourcesPath, 'whisper')
     : join(baseDir(), '../../resources/win/whisper')
 
-  return ['vulkan', 'cpu']
+  return ['blas', 'cpu']
     .map((flavor) => join(root, flavor, 'whisper-server.exe'))
     .filter((p) => existsSync(p))
 }
