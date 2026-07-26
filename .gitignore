@@ -4,3 +4,9 @@ out/
 *.log
 .DS_Store
 helper/dita-hotkeys
+
+# binários de terceiros e artefatos gerados: quem clona roda `npm run deps:win`
+# e `npm run icons:win`
+app/resources/win/
+app/build/icon.ico
+app/.tmp-whisper/
