@@ -31,6 +31,16 @@ describe('defaults de atalho', () => {
     expect(DEFAULT_PTT).not.toBe('ralt')
   })
 
+  // Um toque solto no Windows direito abre o menu Iniciar, e teclas de PTT
+  // nunca são suprimidas — então rwin não funciona como push-to-talk. A lista
+  // é contrato com o helper C#, por isso a comparação é exata e ordenada: um
+  // valor a mais aqui vira um --ptt=<algo> que o helper precisa saber parsear.
+  it('não oferece rwin como PTT no Windows: abre o menu Iniciar', async () => {
+    const { PTT_OPTIONS } = await loadDefaultsFor('win32')
+    expect([...PTT_OPTIONS]).toEqual(['rctrl', 'rshift', 'ralt'])
+    expect(PTT_OPTIONS).not.toContain('rwin')
+  })
+
   it('o default sempre está entre as opções oferecidas, no Windows e no macOS', async () => {
     for (const platform of ['win32', 'darwin']) {
       const { DEFAULT_TOGGLE, DEFAULT_PTT, TOGGLE_OPTIONS, PTT_OPTIONS } = await loadDefaultsFor(platform)

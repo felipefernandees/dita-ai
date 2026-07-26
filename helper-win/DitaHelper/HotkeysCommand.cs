@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 
 namespace DitaHelper;
@@ -8,6 +9,26 @@ internal static class HotkeysCommand
     // só o ponteiro nativo, e o GC coletaria o thunk no meio da sessão.
     private static Native.HookProc? _proc;
     private static IntPtr _hook = IntPtr.Zero;
+
+    // O HookCallback NUNCA pode escrever no pipe do stdout. O Windows impõe
+    // LowLevelHooksTimeout (HKCU\Control Panel\Desktop, ~300ms por padrão) a
+    // cada chamada de um hook low-level: se o callback estourar esse prazo, o
+    // sistema desregistra o hook SILENCIOSAMENTE — sem exceção, sem erro, sem
+    // evento — e os atalhos do usuário morrem pelo resto da sessão (o
+    // hotkeys.js do Electron não tem lógica de restart). Uma escrita no pipe
+    // bloqueia sempre que o Electron para de drenar nosso stdout, mesmo que
+    // brevemente (pausa de GC, transcrição pesada, renderer travado). Por isso
+    // o callback só enfileira, e uma thread dedicada escreve.
+    //
+    // A fila é DELIBERADAMENTE sem capacidade máxima. Não troque por uma
+    // BlockingCollection limitada nem por uma fila que descarta eventos: com
+    // limite, o Add volta a bloquear o produtor — que é o callback — e o
+    // problema retorna inteiro; descartando, um ptt_up perdido deixaria o app
+    // preso em estado de gravação para sempre. A fila só cresce se o Electron
+    // parou de ler de vez, e nesse caso o app já morreu — a memória gasta não
+    // importa mais.
+    private static readonly BlockingCollection<string> _queue = new();
+    private static Thread? _writer;
 
     private static ToggleSpec _toggle = ToggleSpec.Parse("ctrl+shift+space");
     private static int _pttVk = Native.VK_RCONTROL;
@@ -28,6 +49,7 @@ internal static class HotkeysCommand
         }
 
         new Thread(ReadStdinLoop) { IsBackground = true }.Start();
+        StartWriter();
 
         _proc = HookCallback;
         _hook = Native.SetWindowsHookExW(
@@ -36,6 +58,7 @@ internal static class HotkeysCommand
         if (_hook == IntPtr.Zero)
         {
             Emit("no_permission");
+            Drain();
             return 1;
         }
 
@@ -46,7 +69,45 @@ internal static class HotkeysCommand
         while (Native.GetMessageW(out _, IntPtr.Zero, 0, 0) > 0) { }
 
         Native.UnhookWindowsHookEx(_hook);
+        Drain();
         return 0;
+    }
+
+    private static void StartWriter()
+    {
+        // IsBackground = true: quando o laço de mensagens termina, o processo
+        // está saindo e a thread escritora não pode segurá-lo vivo — ela pode
+        // estar parada para sempre numa escrita no pipe, que é exatamente o
+        // cenário que a fila existe para tolerar. O flush ordenado da saída
+        // normal fica por conta do Drain() abaixo, não do runtime.
+        _writer = new Thread(WriterLoop) { IsBackground = true, Name = "stdout-writer" };
+        _writer.Start();
+    }
+
+    private static void WriterLoop()
+    {
+        // GetConsumingEnumerable() bloqueia enquanto a fila está vazia e só
+        // termina depois de CompleteAdding() + fila drenada.
+        foreach (var line in _queue.GetConsumingEnumerable())
+        {
+            try
+            {
+                Console.Out.Write(line);
+                Console.Out.Flush();
+            }
+            catch (IOException) { /* o Electron fechou o pipe: nada a fazer */ }
+            catch (ObjectDisposedException) { }
+        }
+    }
+
+    // Saída normal: fecha a fila para o writer terminar o foreach e dá a ele um
+    // prazo para escrever o que sobrou. O Join é limitado porque o writer pode
+    // estar preso numa escrita que nunca completa; nesse caso IsBackground
+    // garante que o processo sai mesmo assim, em vez de virar zumbi.
+    private static void Drain()
+    {
+        _queue.CompleteAdding();
+        _writer?.Join(TimeSpan.FromSeconds(2));
     }
 
     private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
@@ -115,10 +176,12 @@ internal static class HotkeysCommand
         return Native.CallNextHookEx(_hook, nCode, wParam, lParam);
     }
 
+    // Chamado de dentro do HookCallback: só enfileira. Add() numa
+    // BlockingCollection sem capacidade nunca bloqueia o produtor.
     private static void Emit(string ev)
     {
-        Console.Out.Write("{\"event\":\"" + ev + "\"}\n");
-        Console.Out.Flush();
+        try { _queue.Add("{\"event\":\"" + ev + "\"}\n"); }
+        catch (InvalidOperationException) { /* Drain() já fechou a fila */ }
     }
 
     private static void ReadStdinLoop()

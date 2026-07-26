@@ -21,6 +21,12 @@ export const TOGGLE_OPTIONS = Object.freeze(isWin
   ? ['ctrl+shift+space', 'ctrl+space', 'alt+space', 'f5']
   : ['fn+space', 'opt+space', 'ctrl+space', 'f5'])
 
+// 'rwin' não está aqui de propósito: um toque solto na tecla Windows direita
+// abre o menu Iniciar toda vez, e teclas de push-to-talk nunca são suprimidas
+// (o usuário ainda precisa delas para os atalhos normais) — então rwin é
+// inutilizável como PTT. 'ralt' entra no lugar, mas nunca como default: em
+// teclado ABNT2 o Right Alt é o AltGr (ç, º, ₢), então só serve para quem
+// está num layout US e escolhe deliberadamente.
 export const PTT_OPTIONS = Object.freeze(isWin
-  ? ['rctrl', 'rshift', 'rwin']
+  ? ['rctrl', 'rshift', 'ralt']
   : ['rcmd', 'ropt'])
