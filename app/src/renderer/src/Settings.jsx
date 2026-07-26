@@ -1,5 +1,43 @@
 import { useEffect, useMemo, useState } from 'react'
 
+// Fn não chega a nenhum hook no Windows, e o Right Alt é o AltGr do teclado
+// ABNT2 — por isso as listas divergem em vez de serem traduzidas.
+const ATALHOS = {
+  darwin: {
+    toggle: [
+      ['fn+space', 'Fn + Espaço'],
+      ['opt+space', '⌥ Option + Espaço'],
+      ['ctrl+space', '⌃ Control + Espaço'],
+      ['f5', 'F5']
+    ],
+    ptt: [
+      ['rcmd', '⌘ Command direito'],
+      ['ropt', '⌥ Option direito']
+    ],
+    padraoToggle: 'fn+space',
+    padraoPtt: 'rcmd',
+    colarUltimo: '⌃⌘V'
+  },
+  win32: {
+    toggle: [
+      ['ctrl+shift+space', 'Ctrl + Shift + Espaço'],
+      ['ctrl+space', 'Ctrl + Espaço'],
+      ['alt+space', 'Alt + Espaço'],
+      ['f5', 'F5']
+    ],
+    // NÃO reintroduzir 'rwin': um toque solto abre o menu Iniciar, e teclas
+    // de PTT nunca são suprimidas.
+    ptt: [
+      ['rctrl', 'Ctrl direito'],
+      ['rshift', 'Shift direito'],
+      ['ralt', 'Alt direito (AltGr — evite em teclado ABNT2)']
+    ],
+    padraoToggle: 'ctrl+shift+space',
+    padraoPtt: 'rctrl',
+    colarUltimo: 'Ctrl+Alt+V'
+  }
+}
+
 // Paleta neutra clonada do Wispr Flow: near-black e branco, zero cor saturada
 const C = {
   bg: '#131315',        // fundo app
@@ -74,6 +112,7 @@ function Toggle({ checked, onChange }) {
 
 
 function Config({ settings, mics, update }) {
+  const atalhos = ATALHOS[settings.platform] || ATALHOS.darwin
   return (
     <>
       <h1 style={S.h1}>Configurações</h1>
@@ -85,11 +124,8 @@ function Config({ settings, mics, update }) {
             <div style={S.label}>Atalho principal (liga e desliga)</div>
             <div style={S.sub}>Aperta uma vez pra gravar, de novo pra transcrever</div>
           </div>
-          <select style={S.select} value={settings.toggleShortcut || 'fn+space'} onChange={(e) => update('toggleShortcut', e.target.value)}>
-            <option value="fn+space">Fn + Espaço</option>
-            <option value="opt+space">⌥ Option + Espaço</option>
-            <option value="ctrl+space">⌃ Control + Espaço</option>
-            <option value="f5">F5</option>
+          <select style={S.select} value={settings.toggleShortcut || atalhos.padraoToggle} onChange={(e) => update('toggleShortcut', e.target.value)}>
+            {atalhos.toggle.map(([valor, rotulo]) => <option key={valor} value={valor}>{rotulo}</option>)}
           </select>
         </div>
         <div style={{ ...S.row, ...S.divider }}>
@@ -97,14 +133,13 @@ function Config({ settings, mics, update }) {
             <div style={S.label}>Push-to-talk (segurar pra falar)</div>
             <div style={S.sub}>Grava enquanto a tecla está pressionada</div>
           </div>
-          <select style={S.select} value={settings.pttShortcut || 'rcmd'} onChange={(e) => update('pttShortcut', e.target.value)}>
-            <option value="rcmd">⌘ Command direito</option>
-            <option value="ropt">⌥ Option direito</option>
+          <select style={S.select} value={settings.pttShortcut || atalhos.padraoPtt} onChange={(e) => update('pttShortcut', e.target.value)}>
+            {atalhos.ptt.map(([valor, rotulo]) => <option key={valor} value={valor}>{rotulo}</option>)}
           </select>
         </div>
         <div style={{ ...S.row, ...S.divider }}>
           <div style={S.sub}>
-            <span style={S.kbd}>Esc</span> cancela a gravação · <span style={S.kbd}>⌃⌘V</span> cola o último ditado
+            <span style={S.kbd}>Esc</span> cancela a gravação · <span style={S.kbd}>{atalhos.colarUltimo}</span> cola o último ditado
           </div>
         </div>
       </div>

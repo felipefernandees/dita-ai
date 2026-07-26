@@ -177,6 +177,7 @@ app.whenReady().then(async () => {
   }
 
   ipcMain.handle('settings:get-all', () => ({
+    platform: process.platform,
     language: getSetting('language', 'pt'),
     micDeviceId: getSetting('micDeviceId', ''),
     openAtLogin: getSetting('openAtLogin', 'true'),
