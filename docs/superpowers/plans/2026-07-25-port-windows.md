@@ -327,9 +327,11 @@ export const TOGGLE_OPTIONS = isWin
   : ['fn+space', 'opt+space', 'ctrl+space', 'f5']
 
 export const PTT_OPTIONS = isWin
-  ? ['rctrl', 'rshift', 'rwin']
+  ? ['rctrl', 'rshift', 'ralt']
   : ['rcmd', 'ropt']
 ```
+
+> **Corrigido durante a execução (Task 4b).** A lista Windows original trazia `rwin`. Teclas de push-to-talk nunca são suprimidas — o usuário ainda precisa delas para atalhos normais — e um toque solto na tecla Windows direita **abre o menu Iniciar toda vez**, o que torna `rwin` inutilizável como PTT. `ralt` entra no lugar, mas nunca como default: em teclado ABNT2 o Right Alt é o AltGr (`ç`, `º`, `₢`). As listas também são `Object.freeze`d, porque são singletons de módulo e o consumidor previsto é um `<select>`.
 
 - [ ] **Step 4: Rodar para ver passar**
 
@@ -2147,10 +2149,12 @@ const ATALHOS = {
       ['alt+space', 'Alt + EspaÃ§o'],
       ['f5', 'F5']
     ],
+    // NÃO reintroduzir 'rwin' aqui: um toque solto abre o menu Iniciar, e
+    // teclas de PTT nunca são suprimidas. Ver a nota da Task 4b.
     ptt: [
       ['rctrl', 'Ctrl direito'],
       ['rshift', 'Shift direito'],
-      ['rwin', 'Windows direito']
+      ['ralt', 'Alt direito (AltGr — evite em teclado ABNT2)']
     ],
     padraoToggle: 'ctrl+shift+space',
     padraoPtt: 'rctrl',
