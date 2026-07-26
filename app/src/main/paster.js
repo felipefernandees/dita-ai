@@ -1,29 +1,11 @@
-import { clipboard } from 'electron'
-import { execFile } from 'child_process'
+// Dispatcher de plataforma. Os imports são estáticos de propósito: o
+// electron-vite faz bundle do processo main com rollup, que não resolve
+// especificador dinâmico. Importar o módulo da outra plataforma é inofensivo
+// — cada um só define funções, nada roda no import.
+import * as darwin from './paster.darwin.js'
+import * as win32 from './paster.win32.js'
 
-function osascript(script) {
-  return new Promise((resolve, reject) => {
-    execFile('osascript', ['-e', script], (err, stdout) => (err ? reject(err) : resolve(stdout.trim())))
-  })
-}
+const impl = process.platform === 'win32' ? win32 : darwin
 
-export async function getFrontmostApp() {
-  try {
-    return await osascript('tell application "System Events" to get name of first process whose frontmost is true')
-  } catch { return '' }
-}
-
-export async function pasteText(text) {
-  const previous = clipboard.readText()
-  clipboard.writeText(text)
-  try {
-    await osascript('tell application "System Events" to keystroke "v" using command down')
-  } catch {
-    return false // sem permissão de acessibilidade ou keystroke falhou
-  }
-  // restaura o clipboard do usuário depois que o paste assentou
-  setTimeout(() => {
-    if (clipboard.readText() === text && previous) clipboard.writeText(previous)
-  }, 400)
-  return true
-}
+export const getFrontmostApp = (...args) => impl.getFrontmostApp(...args)
+export const pasteText = (...args) => impl.pasteText(...args)
