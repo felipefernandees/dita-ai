@@ -1,6 +1,7 @@
 import { spawn, execFile } from 'child_process'
-import { writeFile, unlink, readFile, rename } from 'fs/promises'
-import { createWriteStream, existsSync, mkdirSync } from 'fs'
+import { writeFile, unlink, readFile, rename, access } from 'fs/promises'
+import { createWriteStream, existsSync, mkdirSync, constants as fsConstants } from 'fs'
+import { createServer } from 'net'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { pipeline } from 'stream/promises'
@@ -70,10 +71,18 @@ export async function startWhisperServer({
     '--suppress-nst'
   ], { stdio: ['ignore', 'pipe', 'pipe'] })
 
+  // Sem isso, um binário ausente/corrompido (ENOENT, EACCES) sobe como
+  // 'error' assíncrono sem listener — o processo da suíte/app inteiro
+  // derruba com exceção não tratada em vez de virar uma rejeição normal que
+  // o loop de fallback consegue capturar.
+  let spawnError = null
+  proc.on('error', (err) => { spawnError = err })
+
   // espera o server subir (modelo grande demora a carregar)
   const deadline = Date.now() + 60000
   while (Date.now() < deadline) {
-    if (proc.exitCode !== null) throw new Error(`whisper-server morreu com código ${proc.exitCode}`)
+    if (spawnError) throw new Error(`whisper-server (${bin}) falhou ao iniciar: ${spawnError.message}`)
+    if (proc.exitCode !== null) throw new Error(`whisper-server (${bin}) morreu com código ${proc.exitCode}`)
     try {
       await fetch(`http://127.0.0.1:${port}/`, { method: 'GET' })
       return { port, kill: () => proc.kill() }
@@ -83,27 +92,69 @@ export async function startWhisperServer({
   throw new Error(`whisper-server (${bin}) não subiu em 60s`)
 }
 
+// Confere condições que são as MESMAS pra qualquer candidato — se falharem,
+// trocar de backend (BLAS/CPU) não muda nada, então não faz sentido esperar
+// até 60s por tentativa só pra descobrir isso nem tentar a próxima variante.
+// Hoje: modelo ausente/sem permissão de leitura, e a porta já ocupada por
+// outro processo (inclusive uma instância nossa presa de uma execução
+// anterior). Sem essa checagem antecipada, os dois casos ficam
+// indistinguíveis de "todo backend de whisper-server é incompatível com esta
+// máquina", e o usuário só veria o erro (enganoso) depois de 60s x N
+// candidatos.
+async function assertModelReadable(model) {
+  try {
+    await access(model, fsConstants.R_OK)
+  } catch {
+    throw new Error(`modelo de transcrição não encontrado ou sem permissão de leitura: ${model} (rode \`ensureModel()\`/baixe o modelo antes de iniciar o whisper-server)`)
+  }
+}
+
+function assertPortFree(port) {
+  return new Promise((resolve, reject) => {
+    const probe = createServer()
+    probe.once('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        reject(new Error(`porta ${port} já está em uso por outro processo — trocar o backend de whisper-server não resolve isso`))
+      } else {
+        reject(err)
+      }
+    })
+    probe.once('listening', () => probe.close(() => resolve()))
+    probe.listen(port, '127.0.0.1')
+  })
+}
+
 // Tenta cada variante na ordem de whisperServerCandidates() (BLAS, depois
 // CPU puro). BLAS depende da DLL do OpenBLAS que vem no zip: se ela não
 // carregar (falta de instrução de CPU compatível, DLL ausente por algum
 // motivo, release futuro que pare de publicar o asset blas) o processo morre
 // no boot sem erro de rede nenhum pra distinguir — por isso qualquer falha
-// aqui, exceto as que sabidamente não são específicas de backend (ver
-// startWhisperServerWithFallback), simplesmente tenta o próximo candidato.
-export async function startWhisperServerWithFallback(opts = {}) {
-  const candidates = whisperServerCandidates()
+// realmente específica de backend simplesmente tenta o próximo candidato
+// (ver assertModelReadable/assertPortFree acima pras exceções a essa regra).
+//
+// `candidates` é injetável (além do override DITA_WHISPER_SERVER em
+// binaries.js, que só permite testar UM candidato) para os testes poderem
+// exercitar o loop de fallback com múltiplos candidatos falsos sem depender
+// de um whisper-server de verdade.
+export async function startWhisperServerWithFallback({ candidates: candidatesOverride, ...opts } = {}) {
+  const candidates = candidatesOverride || whisperServerCandidates()
   if (!candidates.length) throw new Error('nenhum whisper-server encontrado: rode `npm run deps:win`')
 
-  let lastError
+  const model = opts.modelPath || modelPath()
+  const port = opts.port || PORT
+  await assertModelReadable(model)
+  await assertPortFree(port)
+
+  const falhas = []
   for (const binPath of candidates) {
     try {
-      return await startWhisperServer({ ...opts, binPath })
+      return await startWhisperServer({ ...opts, binPath, modelPath: model, port })
     } catch (err) {
-      lastError = err
+      falhas.push(`${binPath}: ${err.message}`)
       console.error(`whisper-server falhou em ${binPath}:`, err.message)
     }
   }
-  throw lastError
+  throw new Error(`nenhum whisper-server subiu. Candidatos tentados:\n${falhas.map((f) => `  - ${f}`).join('\n')}`)
 }
 
 async function webmToWav(webmBuffer) {
