@@ -1,13 +1,18 @@
 import { Tray, Menu, nativeImage, app, globalShortcut } from 'electron'
 import { join } from 'path'
 
+const isMac = process.platform === 'darwin'
+
 function loadIcon() {
   const iconPath = app.isPackaged
-    ? join(process.resourcesPath, 'trayTemplate.png')
-    : join(__dirname, '../../resources/trayTemplate.png')
-  const img = nativeImage.createFromPath(iconPath).resize({ width: 18, height: 18 })
-  img.setTemplateImage(true)
-  return img
+    ? join(process.resourcesPath, isMac ? 'trayTemplate.png' : 'tray.ico')
+    : join(__dirname, '../../resources', isMac ? 'trayTemplate.png' : 'win/tray.ico')
+
+  const img = nativeImage.createFromPath(iconPath)
+  if (!isMac) return img            // o .ico já traz os tamanhos certos
+  const resized = img.resize({ width: 18, height: 18 })
+  resized.setTemplateImage(true)    // só o macOS entende template image
+  return resized
 }
 
 export function createTray({ getLast, onPasteLast, onOpenSettings = () => {}, onLanguageChange = () => {}, getLanguage = () => 'pt' }) {
@@ -18,7 +23,7 @@ export function createTray({ getLast, onPasteLast, onOpenSettings = () => {}, on
 
   function buildMenu(lastText) {
     return Menu.buildFromTemplate([
-      { label: 'Paste last transcript', accelerator: 'Ctrl+Cmd+V', click: onPasteLast },
+      { label: 'Paste last transcript', accelerator: isMac ? 'Ctrl+Cmd+V' : 'Ctrl+Alt+V', click: onPasteLast },
       { label: truncate(lastText), enabled: false },
       { type: 'separator' },
       { label: 'Abrir Dita Aí', click: onOpenSettings },
@@ -31,12 +36,13 @@ export function createTray({ getLast, onPasteLast, onOpenSettings = () => {}, on
         ]
       },
       { type: 'separator' },
-      { label: 'Sair do Dita Aí', accelerator: 'Cmd+Q', click: () => app.quit() }
+      { label: 'Sair do Dita Aí', accelerator: isMac ? 'Cmd+Q' : 'Ctrl+Q', click: () => app.quit() }
     ])
   }
 
   tray.setContextMenu(buildMenu(getLast()?.text))
-  globalShortcut.register('Control+Command+V', onPasteLast)
+  const registered = globalShortcut.register(isMac ? 'Control+Command+V' : 'Control+Alt+V', onPasteLast)
+  if (!registered) console.error('tray: falha ao registrar atalho global de colar (conflito com outro app?)')
 
   return {
     updateLastTranscript(text) { tray.setContextMenu(buildMenu(text)) }

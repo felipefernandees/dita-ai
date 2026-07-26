@@ -11,6 +11,7 @@ import { createTray } from './tray.js'
 import { openSettingsWindow } from './settings-window.js'
 import { helperPath } from './helper-path.js'
 import { dataDir, dbPath } from './paths.js'
+import { DEFAULT_TOGGLE, DEFAULT_PTT } from './defaults.js'
 
 let rec, hotkeys, whisper, tray
 let targetApp = ''
@@ -85,8 +86,13 @@ app.whenReady().then(async () => {
   mkdirSync(dataDir(), { recursive: true })
   initDb(dbPath())
   ckpt('db')
+  // macOS pede permissão por app; Windows é um toggle global do sistema
+  // (Configurações > Privacidade > Microfone > "Permitir que aplicativos de
+  // área de trabalho acessem seu microfone"), sem API de prompt.
   // não-bloqueante: se o prompt de mic ficar aberto, o resto do app sobe mesmo assim
-  systemPreferences.askForMediaAccess('microphone').catch(() => {})
+  if (process.platform === 'darwin') {
+    systemPreferences.askForMediaAccess('microphone').catch(() => {})
+  }
   ckpt('mic-async')
 
   rec = createRecorderWindow({ getScale: () => getSetting('popupScale', 'm') })
@@ -129,18 +135,24 @@ app.whenReady().then(async () => {
   })
 
   ckpt('machine')
-  const helperArgs = () => [
-    `--toggle=${getSetting('toggleShortcut', 'fn+space')}`,
-    `--ptt=${getSetting('pttShortcut', 'rcmd')}`
-  ]
+  const helperArgs = () => {
+    const flags = [
+      `--toggle=${getSetting('toggleShortcut', DEFAULT_TOGGLE)}`,
+      `--ptt=${getSetting('pttShortcut', DEFAULT_PTT)}`
+    ]
+    // o helper Windows é multi-comando; o Swift só faz hotkeys
+    return process.platform === 'win32' ? ['hotkeys', ...flags] : flags
+  }
   hotkeys = startHotkeys({
     helperPath: helperPath(),
     args: helperArgs(),
     machine,
     onNoPermission: () => {
       new Notification({
-        title: 'Dita Aí precisa de permissão',
-        body: 'Ajustes > Privacidade e Segurança > Acessibilidade: ative o Dita Aí. Os atalhos ligam sozinhos em seguida.'
+        title: 'Dita Aí não conseguiu registrar o atalho',
+        body: process.platform === 'darwin'
+          ? 'Ajustes > Privacidade e Segurança > Acessibilidade: ative o Dita Aí. Os atalhos ligam sozinhos em seguida.'
+          : 'O atalho global falhou ao instalar. Feche outros apps de captura de teclado e reabra o Dita Aí.'
       }).show()
     }
   })
@@ -172,8 +184,8 @@ app.whenReady().then(async () => {
     waveColor: getSetting('waveColor', '#F4F2EC'),
     popupBg: getSetting('popupBg', '#221C33'),
     popupRadius: getSetting('popupRadius', '999'),
-    toggleShortcut: getSetting('toggleShortcut', 'fn+space'),
-    pttShortcut: getSetting('pttShortcut', 'rcmd')
+    toggleShortcut: getSetting('toggleShortcut', DEFAULT_TOGGLE),
+    pttShortcut: getSetting('pttShortcut', DEFAULT_PTT)
   }))
   ipcMain.handle('settings:set', async (_e, key, value) => {
     if (key === 'language') {
@@ -212,10 +224,23 @@ app.whenReady().then(async () => {
     const { execFileSync } = await import('child_process')
     const { readFileSync } = await import('fs')
     const { tmpdir } = await import('os')
-    const aiff = join(tmpdir(), 'dita-smoke.aiff')
+    const { ffmpegPath } = await import('./binaries.js')
+    const phrase = 'Teste do pipeline completo do Dita Aí'
     const webm = join(tmpdir(), 'dita-smoke.webm')
-    execFileSync('say', ['-v', 'Luciana', '-o', aiff, 'Teste do pipeline completo do Dita Aí'])
-    execFileSync('/opt/homebrew/bin/ffmpeg', ['-y', '-i', aiff, webm], { stdio: 'ignore' })
+    if (process.platform === 'darwin') {
+      const aiff = join(tmpdir(), 'dita-smoke.aiff')
+      execFileSync('say', ['-v', 'Luciana', '-o', aiff, phrase])
+      execFileSync(ffmpegPath(), ['-y', '-i', aiff, webm], { stdio: 'ignore' })
+    } else {
+      // sem `say` no Windows: sintetiza via SAPI (System.Speech) e grava WAV;
+      // aspas simples dobradas escapam a frase dentro do -Command do PowerShell
+      const wav = join(tmpdir(), 'dita-smoke.wav')
+      const psPhrase = phrase.replace(/'/g, "''")
+      const psWav = wav.replace(/'/g, "''")
+      const psCommand = `Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.SetOutputToWaveFile('${psWav}'); $s.Speak('${psPhrase}'); $s.Dispose()`
+      execFileSync('powershell', ['-NoProfile', '-Command', psCommand])
+      execFileSync(ffmpegPath(), ['-y', '-i', wav, webm], { stdio: 'ignore' })
+    }
     targetApp = 'SmokeTest'
     recStartedAt = Date.now() - 3000
     rec.show()

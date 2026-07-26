@@ -1,6 +1,15 @@
 import { BrowserWindow, screen } from 'electron'
 import { join } from 'path'
 
+const isMac = process.platform === 'darwin'
+
+// no macOS mantém o popup acima de apps em tela cheia e fora da troca de
+// espaços; no Windows o alwaysOnTop 'screen-saver' já basta
+function keepOnAllWorkspaces(win) {
+  if (!isMac) return
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true })
+}
+
 // Tamanhos fixos, clonados do Wispr Flow (sem personalização)
 const SIZE = {
   rec: { w: 214, h: 40 },      // pílula de gravação
@@ -24,7 +33,7 @@ export function createRecorderWindow() {
   })
   // visível em todos os espaços, inclusive por cima de apps em tela cheia;
   // skipTransformProcessType evita o app "roubar" ativação e sumir de espaço
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true })
+  keepOnAllWorkspaces(win)
   if (process.env.DITA_DEBUG) {
     win.webContents.on('console-message', (_e, _l, m) => console.log('RENDERER:', m))
     win.webContents.on('render-process-gone', (_e, d) => console.log('RENDERER GONE:', JSON.stringify(d)))
@@ -61,7 +70,7 @@ export function createRecorderWindow() {
     guard = setInterval(() => {
       if (win.isDestroyed()) return
       win.setAlwaysOnTop(true, 'screen-saver')
-      win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true })
+      keepOnAllWorkspaces(win)
       if (!win.isVisible()) win.showInactive()
       win.moveTop()
     }, 500)
