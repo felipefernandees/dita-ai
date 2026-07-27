@@ -1,4 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
+import { TAXA_ALVO, amostrasPorChunk, blocoParaPcm16, taxaUtilizavel } from './pcm'
+// `?url` faz o Vite tratar o worklet como ASSET, não como módulo do bundle: ele
+// sai como arquivo próprio em out/renderer/assets e esta variável vira o
+// caminho dele. É o único jeito que funciona nos dois mundos — em dev o Vite
+// serve pelo dev server, no empacotado o addModule resolve o file:// ao lado do
+// index.html. Importar o worklet normalmente o enfiaria dentro do bundle do
+// React, e o AudioWorkletGlobalScope não tem `document` nem `window` para rodar
+// isso; um `addModule` apontando para o próprio bundle explode em runtime.
+import urlWorklet from './pcm-worklet.js?url'
 
 // Paleta clonada do Wispr Flow (near-black / branco / cinza)
 const BG = '#1a1a1c'
@@ -6,6 +15,7 @@ const WHITE = '#f5f5f7'
 const GRAY = '#8e8e93'
 const BTN = '#48484a'
 const XBG = 'rgba(255,255,255,0.14)'
+const ALERTA = '#ff9f9f'
 
 // POR QUE OS BOTÕES DAQUI USAM onMouseUp E NÃO onClick
 //
@@ -30,18 +40,23 @@ export default function Popup() {
   const [pasted, setPasted] = useState(false)
   const [shown, setShown] = useState(false)
   const [session, setSession] = useState(0) // re-arma o equalizador a cada gravação
+  const [aoVivo, setAoVivo] = useState('')   // texto que o Gemini já devolveu neste ditado
+  const [rtErro, setRtErro] = useState('')   // falha do motor remoto, visível em vez de silenciosa
   const canvasRef = useRef(null)
   const mediaRef = useRef({})
 
   useEffect(() => {
     window.dita.onCommand(async (ch, payload) => {
-      if (ch === 'rec:start') await startRecording()
+      if (ch === 'rec:start') await startRecording(payload)
       if (ch === 'rec:stop') stopRecording(true)
       if (ch === 'rec:cancel') { stopRecording(false); setShown(false) }
       if (ch === 'rec:phase') setPhase(payload)
       if (ch === 'rec:result') { setResult(payload.text); setPasted(!!payload.pasted); setPhase('done') }
       if (ch === 'rec:cancelled') setPhase('cancelled')
       if (ch === 'rec:closing') setShown(false)
+      // O payload é o texto ACUMULADO, não o incremento: substituir é o certo.
+      if (ch === 'rt:texto') setAoVivo(String(payload ?? ''))
+      if (ch === 'rt:erro') setRtErro(String(payload ?? '').trim())
     })
   }, [])
 
@@ -93,15 +108,114 @@ export default function Popup() {
     return () => cancelAnimationFrame(raf)
   }, [phase, session])
 
-  function releaseMic() {
-    const m = mediaRef.current
-    try { m.stream?.getTracks().forEach((t) => t.stop()) } catch { /* já parado */ }
-    try { m.audioCtx?.close() } catch { /* já fechado */ }
-    if (m.watchdog) clearTimeout(m.watchdog)
+  // close() devolve uma PROMISE, então `try { ctx.close() } catch {}` não pega
+  // nada: a rejeição acontece depois do bloco já ter saído. E ela acontece —
+  // releaseMic roda mais de uma vez por ditado (no onstop do recorder e de novo
+  // no início do ditado seguinte), e a segunda chamada cai em "Cannot close a
+  // closed AudioContext". Medido: aparecia como `Uncaught (in promise)
+  // InvalidStateError` no console do popup a cada gravação.
+  function fecharContexto(ctx) {
+    try { ctx?.close()?.catch(() => { /* já estava fechado */ }) } catch { /* nem chegou a abrir */ }
   }
 
-  async function startRecording() {
+  function releaseMic() {
+    const m = mediaRef.current
+    // Marca ANTES de desmontar. `iniciarStreaming` é assíncrono (carregar o
+    // worklet leva alguns milissegundos) e um ditado curto pode terminar antes
+    // dele voltar; sem esta bandeira ele instalaria um contexto de 16 kHz num
+    // ditado que já acabou, e esse contexto ficaria aberto para sempre.
+    m.encerrado = true
+    try { m.stream?.getTracks().forEach((t) => t.stop()) } catch { /* já parado */ }
+    // O port precisa fechar explicitamente: enquanto ele estiver aberto o
+    // worklet segue como raiz viva pro coletor de lixo, mesmo com o contexto
+    // fechado.
+    try { m.rtNode?.port.close() } catch { /* já fechado */ }
+    try { m.rtNode?.disconnect() } catch { /* já solto */ }
+    fecharContexto(m.rtCtx)
+    fecharContexto(m.audioCtx)
+    if (m.watchdog) clearTimeout(m.watchdog)
+    m.rtNode = null
+    m.rtCtx = null
+  }
+
+  // Segundo grafo de áudio, aberto SÓ quando o ditado é remoto, que fatia o
+  // microfone em PCM16 16 kHz mono e despacha enquanto o usuário ainda fala.
+  //
+  // POR QUE UM SEGUNDO AudioContext, E NÃO O MESMO DO EQUALIZADOR
+  //
+  // O contexto do equalizador nasce na taxa nativa do dispositivo (48 kHz de
+  // praxe) e o desenho depende disso: com fftSize 64 o loop lê os bins 1..24,
+  // que a 48 kHz cobrem ~750 Hz a 18 kHz. Forçar aquele contexto a 16 kHz
+  // remapearia os mesmos bins para ~250 Hz a 6 kHz e as barras passariam a se
+  // mexer de outro jeito — uma regressão visual no MODO LOCAL, que é o padrão
+  // do app e não tem nada a ver com esta feature. Um contexto só também teria
+  // que existir em todo ditado, inclusive nos locais, e amarraria a aparência
+  // do equalizador à taxa que o navegador resolvesse conceder aqui. Dois
+  // contextos custam um grafo a mais durante o ditado remoto, os dois fecham no
+  // releaseMic, e cada um fica com uma responsabilidade só.
+  async function iniciarStreaming(stream) {
+    const sessao = mediaRef.current
+    let ctx
+    try {
+      // Pedido, não garantia: pedir 16 kHz faz o Chromium reamostrar o
+      // microfone sozinho, mas ele pode devolver a taxa do dispositivo.
+      ctx = new AudioContext({ sampleRate: TAXA_ALVO })
+      const taxa = ctx.sampleRate
+      if (!taxaUtilizavel(taxa)) throw new Error(`taxa de captura inutilizável: ${taxa} Hz`)
+
+      await ctx.audioWorklet.addModule(urlWorklet)
+      if (sessao.encerrado) { fecharContexto(ctx); return }
+
+      const no = new AudioWorkletNode(ctx, 'coletor-pcm', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [1],
+        // É AQUI que o mono é garantido: 'explicit' com channelCount 1 faz o
+        // grafo rebaixar um microfone estéreo antes do process() ver o áudio.
+        // Ler só inputs[0][0] de um nó estéreo mandaria apenas o canal
+        // esquerdo, que não é a mesma coisa — metade do sinal iria embora.
+        channelCount: 1,
+        channelCountMode: 'explicit',
+        channelInterpretation: 'speakers',
+        processorOptions: { amostrasPorBloco: amostrasPorChunk(taxa) }
+      })
+
+      no.port.onmessage = (e) => {
+        if (sessao.encerrado) return
+        const bloco = e.data instanceof Float32Array ? e.data : new Float32Array(e.data)
+        // Reamostra (se a taxa não veio 16 kHz) e converte com o MESMO código
+        // que os testes exercitam. Roda 4x por segundo — barato o bastante para
+        // não valer duplicar a lógica dentro do worklet.
+        try { window.dita.sendRealtimeAudio(blocoParaPcm16(bloco, taxa)) } catch { /* IPC caiu: o webm cobre */ }
+      }
+
+      ctx.createMediaStreamSource(stream).connect(no)
+      // Saída silenciada ligada ao destino de propósito. Um nó de áudio só é
+      // processado se alguma coisa puxa por ele: sem um caminho até o
+      // destination o grafo pode nunca ser renderizado, e o process() do
+      // worklet nunca rodaria — falha total e silenciosa. O ganho zero garante
+      // que nada disso volte pelos alto-falantes como eco.
+      const mudo = ctx.createGain()
+      mudo.gain.value = 0
+      no.connect(mudo).connect(ctx.destination)
+
+      if (sessao.encerrado) { fecharContexto(ctx); return }
+      sessao.rtCtx = ctx
+      sessao.rtNode = no
+    } catch (err) {
+      // Falhar aqui NÃO é perder o ditado: o MediaRecorder continua gravando o
+      // webm e o main cai no whisper local se o Gemini não entregar texto. Por
+      // isso a mensagem é informativa e não interrompe a gravação.
+      console.error('streaming em tempo real:', err)
+      fecharContexto(ctx)
+      setRtErro('Tempo real indisponível. Usando a transcrição local.')
+    }
+  }
+
+  async function startRecording(payload) {
     releaseMic()
+    setAoVivo('')
+    setRtErro('')
     const settings = await window.dita.getSettings()
     const audioInput = settings.micDeviceId ? { deviceId: { exact: settings.micDeviceId } } : true
     let stream
@@ -127,10 +241,16 @@ export default function Popup() {
     // não ficar dessincronizada e o áudio ser transcrito e salvo, nunca jogado
     // fora. O Felipe fala 3+ minutos direto: o limite não pode cortar ele.
     const watchdog = setTimeout(() => window.dita.finish(), 30 * 60000)
-    mediaRef.current = { recorder, stream, analyser, audioCtx, watchdog, keep: false }
+    mediaRef.current = { recorder, stream, analyser, audioCtx, watchdog, keep: false, encerrado: false }
     setSession((n) => n + 1)
     setPhase('recording')
     requestAnimationFrame(() => setShown(true))
+    // O MediaRecorder acima continua rodando no ditado remoto, de propósito: o
+    // main guarda esse webm e o joga no whisper local se o Gemini não devolver
+    // texto nenhum. É a rede de segurança — o streaming é um extra por cima
+    // dela, nunca um substituto, e por isso é disparado DEPOIS de a gravação já
+    // estar de pé e sem `await` segurando o popup.
+    if (payload?.engine === 'gemini') iniciarStreaming(stream)
   }
 
   function stopRecording(keep) {
@@ -171,6 +291,30 @@ export default function Popup() {
   const grayBtn = {
     background: BTN, color: WHITE, border: 0, borderRadius: 9, padding: '7px 15px',
     cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit', flexShrink: 0
+  }
+
+  // A PÍLULA TEM 214x40 E NÃO PODE CRESCER (o tamanho é fixado no main, em
+  // recorder-window.js). Então o texto ao vivo não ganha linha própria: ele
+  // divide a faixa do meio com o equalizador, que encolhe de "todo o espaço
+  // livre" para uma tira de 26px assim que a primeira palavra chega.
+  //
+  // Por que o equalizador não some de vez: ele é o único sinal de "o microfone
+  // está te ouvindo". Num trecho de silêncio, ou quando o Gemini demora, um
+  // meio vazio ficaria indistinguível de um app travado.
+  //
+  // Por que alinhado à direita e cortado na esquerda: o transcrito só cresce, e
+  // o que interessa é sempre o FIM dele. Com justifyContent 'flex-end' o
+  // excesso transborda para a esquerda e o overflow hidden corta ali — sem
+  // ellipsis, sem fatiar a string por contagem de caracteres (que erra sempre,
+  // porque 'i' e 'm' não têm a mesma largura). A máscara desfia a borda
+  // esquerda para o corte parecer um deslize contínuo, e não uma palavra
+  // decapitada.
+  const temFita = Boolean(rtErro || aoVivo)
+  const fita = {
+    flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', justifyContent: 'flex-end',
+    alignItems: 'center', whiteSpace: 'nowrap', fontSize: 11.5,
+    color: rtErro ? ALERTA : WHITE, fontWeight: 500,
+    WebkitMaskImage: 'linear-gradient(to right, transparent 0, #000 20px)'
   }
 
   // Barras estáticas do equalizador (ícone do header do card)
@@ -216,16 +360,31 @@ export default function Popup() {
       </div>
     )
   } else if (phase === 'error') {
+    // O motivo vindo do motor remoto entra como segunda linha em vez de
+    // substituir a primeira: "Áudio preservado" é a informação que decide o que
+    // o usuário faz agora, e a mensagem do Google é o porquê. Cortar a segunda
+    // linha na largura da pílula é aceitável; cortar a primeira não seria.
     body = (
-      <div style={{ ...container(false), padding: '0 16px', justifyContent: 'center' }}>
-        <span style={{ color: '#ff9f9f', fontSize: 13 }}>Falha. Áudio preservado.</span>
+      <div style={{ ...container(false), flexDirection: 'column', justifyContent: 'center', padding: '0 14px', gap: 1 }}>
+        <span style={{ color: ALERTA, fontSize: 13 }}>Falha. Áudio preservado.</span>
+        {rtErro && (
+          <span style={{ color: GRAY, fontSize: 10.5, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {rtErro}
+          </span>
+        )}
       </div>
     )
   } else if (phase === 'processing') {
+    // Depois do stop o Gemini ainda pode mandar as últimas palavras. Manter o
+    // texto na tela em vez de trocar por "Transcrevendo…" evita o pisca-pisca
+    // de o transcrito sumir bem no fim — e num ditado remoto essa fase dura
+    // frações de segundo, então "Transcrevendo…" seria só um flash sem sentido.
     body = (
       <div style={{ ...container(false), padding: '0 10px', gap: 10 }}>
         <button onMouseUp={() => window.dita.cancelHard()} style={circleX}>{IconX}</button>
-        <span style={{ flex: 1, textAlign: 'center', color: GRAY, fontSize: 13 }}>Transcrevendo…</span>
+        {temFita
+          ? <div style={fita}><span>{rtErro || aoVivo}</span></div>
+          : <span style={{ flex: 1, textAlign: 'center', color: GRAY, fontSize: 13 }}>Transcrevendo…</span>}
         <div style={{ width: 24, flexShrink: 0 }} />
       </div>
     )
@@ -233,7 +392,12 @@ export default function Popup() {
     body = (
       <div style={{ ...container(false), padding: '0 10px', gap: 8 }}>
         <button onMouseUp={() => window.dita.cancelHard()} style={circleX}>{IconX}</button>
-        <canvas ref={canvasRef} style={{ flex: 1, height: '100%' }} />
+        <div style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', alignItems: 'center', gap: 6 }}>
+          {/* o loop do equalizador remede clientWidth a cada frame, então ele
+              se reajusta sozinho quando esta faixa encolhe para 26px */}
+          <canvas ref={canvasRef} style={temFita ? { width: 26, flexShrink: 0, height: '100%' } : { flex: 1, minWidth: 0, height: '100%' }} />
+          {temFita && <div style={fita}><span>{rtErro || aoVivo}</span></div>}
+        </div>
         <button onMouseUp={() => window.dita.finish()} style={circleCheck}>{IconCheck}</button>
       </div>
     )
