@@ -30,8 +30,8 @@ arquivo novo e vazio — não um documento seu.
 | 6 | Gravar e apertar `Esc` | tarja "Transcrição cancelada / Anular" | |
 | 7 | Clicar em "Anular" na tarja | o texto é colado mesmo assim | |
 | 8 | `Esc` sem estar gravando | o `Esc` chega ao app normalmente | supressão condicional |
-| 9 | Menu da bandeja → "Paste last transcript" | cola o último ditado | |
-| 10 | `Ctrl+Alt+V` | mesmo que o passo 9 | atalho global |
+| 9 | **Clique esquerdo** no ícone da bandeja | abre as Preferências | |
+| 10 | Clique direito no ícone | menu com o último ditado (só informativo), Abrir, Idiomas, Sair | |
 | 11 | Preferências → botão do atalho | mostra `Ctrl + Shift + Espaço` e `Ctrl direito` marcado; **nenhum** `⌘`, `⌥` ou `Fn` | |
 | 12 | Clicar no botão e apertar `F5`, testar | `F5` passa a gravar sem reiniciar o app | helper reinicia sozinho |
 | 13 | Segurar o atalho principal por 3 segundos | grava **uma vez** só, sem piscar | anti auto-repeat |

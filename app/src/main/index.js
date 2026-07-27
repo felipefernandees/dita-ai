@@ -449,11 +449,7 @@ app.whenReady().then(async () => {
     getLast: () => getLastDictation(),
     getLanguage: () => getSetting('language', 'pt'),
     onLanguageChange: restartWhisper,
-    onOpenSettings: () => openSettingsWindow(),
-    onPasteLast: async () => {
-      const last = getLastDictation()
-      if (last) await pasteText(last.text)
-    }
+    onOpenSettings: () => openSettingsWindow()
   })
 
   ckpt('tray')
