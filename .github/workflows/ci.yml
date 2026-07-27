@@ -52,7 +52,7 @@ jobs:
         working-directory: app
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Electron 34 embute o Node 20, e é ELE que executa a suíte (o script
       # `test` roda o vitest sob ELECTRON_RUN_AS_NODE=1). Usar 20 aqui mantém
@@ -62,7 +62,7 @@ jobs:
       # node_modules: `electron-builder install-app-deps` continua recompilando
       # o better-sqlite3 do zero em todo run. Cachear node_modules esconderia
       # exatamente a quebra que este job existe para pegar.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '20'
           cache: 'npm'
@@ -72,7 +72,7 @@ jobs:
       # app/tests/fixtures/emit-harness são net8.0-windows. A imagem do runner
       # normalmente já traz o SDK 8, mas fixar aqui evita que uma troca de
       # imagem derrube o build sem aviso.
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
 
@@ -122,9 +122,9 @@ jobs:
         working-directory: app
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '20'
           cache: 'npm'
