@@ -211,7 +211,6 @@ export default function Popup() {
 
   async function startRecording(payload) {
     releaseMic()
-    setAoVivo('')
     setRtErro('')
     const settings = await window.dita.getSettings()
     const audioInput = settings.micDeviceId ? { deviceId: { exact: settings.micDeviceId } } : true
