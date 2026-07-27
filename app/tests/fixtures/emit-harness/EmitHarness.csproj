@@ -1,0 +1,27 @@
+<!--
+  Projeto descartável usado só pelo helper-win.emit.test.js. Ele compila os
+  ARQUIVOS REAIS do helper (não uma cópia) junto com o Harness.cs, para que o
+  teste exercite o mesmo Emit/HookCallback que vai para o dita-helper.exe.
+
+  Program.cs, PasteCommand.cs e FrontAppCommand.cs ficam de fora: o Harness
+  tem o próprio Main e não precisa deles.
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>emit-harness</AssemblyName>
+    <RootNamespace>DitaHelper</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../../../helper-win/DitaHelper/HotkeysCommand.cs" Link="HotkeysCommand.cs" />
+    <Compile Include="../../../../helper-win/DitaHelper/Native.cs" Link="Native.cs" />
+    <Compile Include="../../../../helper-win/DitaHelper/ShortcutSpec.cs" Link="ShortcutSpec.cs" />
+  </ItemGroup>
+
+</Project>

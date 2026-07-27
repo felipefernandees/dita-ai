@@ -2,21 +2,35 @@
   "name": "dita-ai",
   "productName": "Dita Aí",
   "version": "0.1.0",
-  "description": "Ditado por voz local para macOS",
+  "description": "Ditado por voz local para macOS e Windows",
   "main": "./out/main/index.js",
   "author": "Felipe Tâmbara",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "test": "ELECTRON_RUN_AS_NODE=1 electron node_modules/vitest/vitest.mjs run",
+    "test": "cross-env ELECTRON_RUN_AS_NODE=1 electron node_modules/vitest/vitest.mjs run",
     "build:mac": "electron-vite build && electron-builder --mac",
-    "postinstall": "electron-builder install-app-deps"
+    "build:win": "npm run check:win-deps && npm run helper:win && npm run icons:win && electron-vite build && electron-builder --win",
+    "check:win-deps": "node scripts/check-win-deps.mjs",
+    "deps:win": "node scripts/fetch-whisper-win.mjs",
+    "icons:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/make-win-icons.ps1",
+    "helper:win": "powershell -NoProfile -ExecutionPolicy Bypass -File ../helper-win/build.ps1",
+    "postinstall": "electron-builder install-app-deps",
+    "whisper:vulkan": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-whisper-vulkan.ps1",
+    "diag:gemini": "cross-env \"DITA_APP_NAME=Dita Aí\" electron scripts/diag-gemini.js",
+    "diag:gemini:audio": "cross-env \"DITA_APP_NAME=Dita Aí\" electron scripts/diag-gemini-audio.js",
+    "diag:gemini:cliente": "cross-env DITA_APP_NAME=\"Dita Aí\" electron scripts/diag-gemini-cliente.js",
+    "diag:gemini:tempo": "cross-env DITA_APP_NAME=\"Dita Aí\" electron scripts/diag-gemini-tempo.js",
+    "diag:vocabulario": "cross-env DITA_APP_NAME=\"Dita Aí\" electron scripts/diag-vocabulario.js"
   },
   "dependencies": {
-    "better-sqlite3": "^11.8.0"
+    "better-sqlite3": "^11.8.0",
+    "ffmpeg-static": "^5.3.0",
+    "ws": "^8.21.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
+    "cross-env": "^7.0.3",
     "electron": "^34.0.0",
     "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",

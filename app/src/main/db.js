@@ -45,15 +45,61 @@ const DICIONARIO_BASE = [
   ['ia for business', 'IA4Business'], ['ia4 business', 'IA4Business']
 ]
 
+// Glossário de desenvolvedor. MEDIDO, não imaginado: as entradas abaixo saíram
+// de transcrições reais de uma frase densa de jargão (scripts/diag-vocabulario.js).
+//
+// Por que aqui e não na instrução do modelo: testamos mandar um glossário na
+// systemInstruction do Gemini e a saída ficou IDÊNTICA, palavra por palavra.
+// A transcrição da entrada (inputTranscription) é feita por um caminho de ASR
+// que ignora a instrução do modelo. Corrigir depois, no polish(), é o único
+// ponto que funciona — e tem a vantagem de valer para os DOIS motores, porque
+// o polish está no caminho compartilhado.
+//
+// Regra para entrar nesta lista: a forma errada NÃO pode ser palavra legítima
+// do português nem termo válido de dev. Substituição é regex cega — uma
+// entrada ruim corrompe texto certo. Por isso "webp" (formato de imagem real)
+// não vira "webhook", e "compus" sozinho não é tocado, só "docker compus".
+const DICIONARIO_DEV = [
+  // grafia/espaçamento de ferramentas
+  ['git hub', 'GitHub'], ['git lab', 'GitLab'], ['bit bucket', 'Bitbucket'],
+  ['post gres', 'Postgres'], ['postgree', 'Postgres'], ['graph ql', 'GraphQL'],
+  ['type script', 'TypeScript'], ['java script', 'JavaScript'],
+  ['node js', 'Node.js'], ['next js', 'Next.js'], ['vue js', 'Vue.js'],
+  ['vs code', 'VS Code'], ['tail wind', 'Tailwind'], ['cloud flare', 'Cloudflare'],
+  ['fire base', 'Firebase'], ['red is', 'Redis'], ['kafca', 'Kafka'],
+  ['kubernets', 'Kubernetes'], ['cubernetes', 'Kubernetes'],
+  // termos compostos que o ASR separa
+  ['web hook', 'webhook'], ['end point', 'endpoint'], ['front end', 'frontend'],
+  ['back end', 'backend'], ['pull requeste', 'pull request'], ['pool request', 'pull request'],
+  ['code revi', 'code review'], ['ci cd', 'CI/CD'],
+  // aportuguesamentos que não são palavra do português
+  ['deploi', 'deploy'], ['branche', 'branch'], ['rollbeque', 'rollback'],
+  ['docker compus', 'docker compose'], ['docker composto', 'docker compose']
+]
+
+// A semeadura é VERSIONADA. A original gravava um booleano, então quem já usa
+// o app nunca receberia termo novo — e este glossário chegou depois. Cada
+// versão insere só o que ainda não existe, então rodar de novo é inofensivo e
+// nada que o usuário tenha editado é sobrescrito.
+const SEEDS = [
+  ['dictionarySeeded', DICIONARIO_BASE],
+  ['dictionarySeededDev1', DICIONARIO_DEV]
+]
+
 function seedDictionary() {
-  const feito = db.prepare("SELECT value FROM settings WHERE key = 'dictionarySeeded'").get()
-  if (feito) return
   const ins = db.prepare('INSERT INTO dictionary (term, replacement) VALUES (?, ?)')
-  const tx = db.transaction(() => {
-    for (const [term, replacement] of DICIONARIO_BASE) ins.run(term, replacement)
-    db.prepare("INSERT INTO settings (key, value) VALUES ('dictionarySeeded', '1')").run()
-  })
-  tx()
+  const existe = db.prepare('SELECT 1 FROM dictionary WHERE lower(term) = lower(?)')
+  const marca = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
+
+  for (const [chave, lista] of SEEDS) {
+    if (db.prepare('SELECT value FROM settings WHERE key = ?').get(chave)) continue
+    db.transaction(() => {
+      for (const [term, replacement] of lista) {
+        if (!existe.get(term)) ins.run(term, replacement)
+      }
+      marca.run(chave, '1')
+    })()
+  }
 }
 
 export function saveDictation({ text, rawText, appName, durationMs }) {

@@ -1,0 +1,161 @@
+# Gera o instalador do Windows e o anexa a uma GitHub Release.
+#
+# O QUE ESTE WORKFLOW PROVA
+#   • que `npm run build:win` completa numa máquina limpa: guarda de
+#     dependências, helper C#, ícones, electron-vite e electron-builder;
+#   • que o instalador NSIS é produzido de fato.
+#
+# O QUE ESTE WORKFLOW **NÃO** PROVA
+#   • que o instalador instala, abre, ouve o teclado, grava do microfone ou
+#     cola na janela em foco. Nada disso é automatizável — precisa de uma
+#     pessoa numa máquina Windows seguindo docs/verificacao-windows.md.
+#   • nada sobre o macOS. Quem cuida disso é o job `macos` do ci.yml.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# O QUE VAI DENTRO DO INSTALADOR
+#
+#   ✔ os backends `blas` e `cpu` do whisper.cpp, baixados por
+#     `npm run deps:win` dos releases OFICIAIS de ggml-org/whisper.cpp. `cpu` é
+#     o piso que roda em qualquer x64; `blas` acelera a álgebra de matriz na
+#     CPU via OpenBLAS e é o primeiro candidato em runtime.
+#
+#   ✘ o backend `vulkan` NÃO vai. Ele não existe como asset publicado: o
+#     upstream não distribui build Vulkan para Windows, então ele é COMPILADO
+#     DO ZERO na máquina do usuário por `npm run whisper:vulkan`, o que exige
+#     VS Build Tools + Windows SDK + Vulkan SDK. Montar essa toolchain no
+#     runner só para embarcar um binário auto-compilado, não assinado e não
+#     verificável não é algo que este workflow se propõe a fazer. A ausência é
+#     inofensiva: src/main/binaries.js filtra os candidatos por existsSync e cai
+#     para `blas` quando a pasta vulkan não está lá. Quem quer a aceleração
+#     compila localmente — ver docs/windows.md, "Aceleração por GPU".
+#
+#   ✘ o modelo de transcrição (ggml-large-v3-turbo, 1,6GB) NÃO vai. O app o
+#     baixa no primeiro uso, para %APPDATA%\dita-ai\models\.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# O INSTALADOR É **NÃO ASSINADO**
+#
+#   Não há certificado de assinatura de código neste projeto. Consequência
+#   concreta: o SmartScreen ("O Windows protegeu o computador") vai barrar a
+#   primeira execução, e o usuário precisa de "Mais informações" → "Executar
+#   assim mesmo". É o mesmo caminho que o app já documenta em
+#   docs/windows.md, "Problemas conhecidos".
+#
+#   Resolver isso exige um certificado de code signing (OV ou EV) comprado de
+#   uma CA pelo mantenedor, guardado como secret do repositório e ligado aqui.
+#   Enquanto esse certificado não existir, NÃO adicione um passo de assinatura
+#   com secrets de mentira: um build não assinado que funciona vale mais que um
+#   passo de assinatura que quebra todo release.
+#
+#   Por isso também NÃO exportamos GH_TOKEN/GITHUB_TOKEN no passo de build: com
+#   um token no ambiente e um build de tag, o electron-builder tenta publicar
+#   sozinho. A publicação aqui é explícita, num passo separado.
+
+name: Release (Windows)
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-installer:
+    name: Instalador Windows (NSIS, não assinado)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      # net8.0-windows, igual ao CI.
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: npm ci (postinstall reconstrói o better-sqlite3 p/ o Electron)
+        run: npm ci
+
+      # `deps:win` fica FORA da cadeia do `build:win` de propósito (ver o
+      # comentário em scripts/check-win-deps.mjs): ele baixa ~60MB e encadeá-lo
+      # faria todo build local repetir o download. Num runner limpo ele é
+      # obrigatório, senão o check:win-deps aborta o build — que é exatamente o
+      # comportamento desejado.
+      - name: Baixar os binários do whisper.cpp (blas + cpu)
+        run: npm run deps:win
+
+      # check:win-deps → helper:win → icons:win → electron-vite → electron-builder
+      - name: npm run build:win
+        run: npm run build:win
+
+      - name: Listar o que saiu em app/dist
+        run: Get-ChildItem -Path dist -File | Select-Object Name, Length
+        shell: pwsh
+
+      # Sempre publica como artefato do run: é o que torna o workflow_dispatch
+      # útil (instalador para baixar sem criar release nenhuma).
+      - name: Subir o instalador como artefato do run
+        uses: actions/upload-artifact@v7
+        with:
+          name: dita-ai-windows-installer
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            app/dist/*.exe
+            app/dist/*.exe.blockmap
+            app/dist/latest.yml
+
+      # A GitHub Release só é criada quando o gatilho foi uma tag `v*`. Num
+      # workflow_dispatch (que roda a partir de um branch) não existe tag para
+      # pendurar a release, e inventar uma seria pior que não ter.
+      #
+      # O .blockmap e o latest.yml são artefatos de auto-update do
+      # electron-builder; podem não ser emitidos dependendo da configuração, e
+      # por isso o padrão não exige que casem (fail_on_unmatched_files fica no
+      # default `false`).
+      - name: Criar a GitHub Release e anexar o instalador
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          draft: false
+          prerelease: false
+          files: |
+            app/dist/*.exe
+            app/dist/*.exe.blockmap
+            app/dist/latest.yml
+          body: |
+            ## Instalador do Windows (x64)
+
+            Baixe o `.exe` abaixo e execute.
+
+            **O SmartScreen vai avisar na primeira execução.** O instalador
+            não é assinado com certificado de code signing. Clique em
+            **"Mais informações" → "Executar assim mesmo"**. Se preferir não
+            confiar num binário não assinado (postura correta), compile você
+            mesmo: [docs/windows.md](docs/windows.md).
+
+            ### O que vem dentro
+            - backends do whisper.cpp `blas` e `cpu`, dos releases oficiais do
+              projeto upstream;
+            - o helper de atalhos (`dita-helper.exe`).
+
+            ### O que **não** vem
+            - o backend **Vulkan**: não existe build oficial para Windows, ele
+              é compilado na sua máquina com `npm run whisper:vulkan` (exige
+              VS Build Tools + Windows SDK + Vulkan SDK). Sem ele o app usa
+              `blas` normalmente — nada quebra;
+            - o **modelo** de transcrição (1,6GB): baixado no primeiro uso.
+
+            Verificação manual do que nenhum CI cobre (atalho global,
+            microfone, colagem): `docs/verificacao-windows.md`.
