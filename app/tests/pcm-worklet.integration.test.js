@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { execFileSync } from 'child_process'
-import { existsSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -25,13 +25,24 @@ import { fileURLToPath } from 'url'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const RENDERER = join(HERE, '../out/renderer')
 const PROBE = join(HERE, 'fixtures/worklet-probe.cjs')
-const ELECTRON = join(HERE, '../node_modules/electron/dist/electron.exe')
+
+// O binário do Electron muda de nome e de profundidade por plataforma
+// ("electron.exe" no Windows, "Electron.app/Contents/MacOS/Electron" no macOS).
+// Quem sabe o caminho certo é o próprio pacote: ele grava o relativo em
+// path.txt na hora do postinstall. Importar 'electron' não serve aqui — o
+// vitest.config.js apelida esse nome para tests/stubs/electron.js.
+const ELECTRON_DIR = join(HERE, '../node_modules/electron')
+const PATH_TXT = join(ELECTRON_DIR, 'path.txt')
+const ELECTRON = existsSync(PATH_TXT)
+  ? join(ELECTRON_DIR, 'dist', readFileSync(PATH_TXT, 'utf8').trim())
+  : null
 
 // Depende do `npm run build` ter rodado. Pula em vez de falhar: numa árvore
 // recém-clonada não existe out/, e um vermelho aqui apontaria para o lugar
-// errado.
+// errado. Mesma regra para o binário: sem `npm install` completo (ou com o
+// download do Electron desligado) não há o que executar.
 const temBuild = existsSync(join(RENDERER, 'index.html')) && existsSync(join(RENDERER, 'assets'))
-const temElectron = existsSync(ELECTRON)
+const temElectron = ELECTRON !== null && existsSync(ELECTRON)
 
 describe.skipIf(!temBuild || !temElectron)('AudioWorklet no build empacotado', () => {
   it('carrega em file:// e fatia o áudio em blocos de 250 ms mono', () => {
