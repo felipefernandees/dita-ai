@@ -2,7 +2,7 @@
   "name": "dita-ai",
   "productName": "Dita Aí",
   "version": "0.1.0",
-  "description": "Ditado por voz local para macOS",
+  "description": "Ditado por voz local para macOS e Windows",
   "main": "./out/main/index.js",
   "author": "Felipe Tâmbara",
   "scripts": {
@@ -19,7 +19,9 @@
     "whisper:vulkan": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-whisper-vulkan.ps1",
     "diag:gemini": "cross-env \"DITA_APP_NAME=Dita Aí\" electron scripts/diag-gemini.js",
     "diag:gemini:audio": "cross-env \"DITA_APP_NAME=Dita Aí\" electron scripts/diag-gemini-audio.js",
-    "diag:gemini:cliente": "cross-env DITA_APP_NAME=\"Dita Aí\" electron scripts/diag-gemini-cliente.js"
+    "diag:gemini:cliente": "cross-env DITA_APP_NAME=\"Dita Aí\" electron scripts/diag-gemini-cliente.js",
+    "diag:gemini:tempo": "cross-env DITA_APP_NAME=\"Dita Aí\" electron scripts/diag-gemini-tempo.js",
+    "diag:vocabulario": "cross-env DITA_APP_NAME=\"Dita Aí\" electron scripts/diag-vocabulario.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.0",

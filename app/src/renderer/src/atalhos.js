@@ -263,7 +263,6 @@ export const ATALHOS = {
     ],
     padraoToggle: 'fn+space',
     padraoPtt: 'rcmd',
-    colarUltimo: '⌃⌘V'
   },
   win32: {
     capturaToggle: true,
@@ -271,6 +270,5 @@ export const ATALHOS = {
     ptt: PTT_WIN32,
     padraoToggle: 'ctrl+shift+space',
     padraoPtt: 'rctrl',
-    colarUltimo: 'Ctrl+Alt+V'
   }
 }

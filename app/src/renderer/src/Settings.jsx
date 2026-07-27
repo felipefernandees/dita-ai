@@ -490,7 +490,7 @@ function Config({ settings, mics, update }) {
         </div>
         <div style={{ ...S.row, ...S.divider }}>
           <div style={S.sub}>
-            <span style={S.kbd}>Esc</span> cancela a gravação · <span style={S.kbd}>{atalhos.colarUltimo}</span> cola o último ditado
+            <span style={S.kbd}>Esc</span> cancela a gravação
           </div>
         </div>
       </div>
