@@ -13,7 +13,8 @@
 // A lista abaixo cobre TODOS os nomes que hoje aparecem em algum
 // `import ... from 'electron'` dentro de src/main e src/preload (Notification,
 // systemPreferences, BrowserWindow, Tray, Menu, nativeImage, globalShortcut,
-// ipcMain, screen, contextBridge, ipcRenderer). Cada um vira um Proxy que
+// ipcMain, screen, contextBridge, ipcRenderer, safeStorage — este último com
+// implementação de verdade logo abaixo). Cada um vira um Proxy que
 // explode assim que ALGUÉM tenta usá-lo de verdade — ler uma propriedade,
 // chamar como função, dar `new` — nomeando exatamente qual API faltou.
 //
@@ -46,6 +47,29 @@ export const clipboard = {
 }
 export const app = { isPackaged: false, getPath: () => '' }
 
+// safeStorage precisa de comportamento DE VERDADE (não um Proxy que explode):
+// config-remoto.js cifra a chave da API com ele, e o teste precisa conferir
+// tanto o caminho cifrado quanto o degradado. O "cifrado" aqui é um envelope
+// reversível de brincadeira — não é criptografia, é só um formato distinto do
+// texto puro, que é exatamente o que o código sob teste precisa distinguir.
+// O DPAPI de verdade só existe dentro do Electron completo.
+const ENVELOPE = 'safeStorage-fake:'
+let cifragemLigada = true
+export const safeStorage = {
+  isEncryptionAvailable: () => cifragemLigada,
+  encryptString: (texto) => {
+    if (!cifragemLigada) throw new Error('safeStorage indisponível')
+    return Buffer.from(ENVELOPE + String(texto), 'utf8')
+  },
+  decryptString: (bytes) => {
+    const s = Buffer.from(bytes).toString('utf8')
+    if (!s.startsWith(ENVELOPE)) throw new Error('bytes não foram cifrados por este safeStorage')
+    return s.slice(ENVELOPE.length)
+  },
+  // gancho só de teste: simula a máquina sem keyring/DPAPI disponível
+  __setEncryptionAvailable: (v) => { cifragemLigada = Boolean(v) }
+}
+
 export const ipcMain = naoMockado('ipcMain')
 export const systemPreferences = naoMockado('systemPreferences')
 export const Notification = naoMockado('Notification')
@@ -59,6 +83,6 @@ export const contextBridge = naoMockado('contextBridge')
 export const ipcRenderer = naoMockado('ipcRenderer')
 
 export default {
-  clipboard, app, ipcMain, systemPreferences, Notification, Tray, Menu,
+  clipboard, app, safeStorage, ipcMain, systemPreferences, Notification, Tray, Menu,
   nativeImage, globalShortcut, BrowserWindow, screen, contextBridge, ipcRenderer
 }
