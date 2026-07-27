@@ -22,6 +22,13 @@ export function createRecorderWindow() {
   const win = new BrowserWindow({
     width: SIZE.rec.w, height: SIZE.rec.h,
     frame: false, transparent: true, alwaysOnTop: true,
+    // transparent:true sozinho não basta no Windows. Sem um backgroundColor
+    // explicitamente 100% transparente (os dois primeiros dígitos são o alfa),
+    // o Electron mantém um fundo opaco por baixo, e ele reaparece quando o
+    // Chromium troca de modo de composição — o sintoma é a pílula virar um
+    // retângulo sólido ao sair da gravação, que é justo quando o <canvas> do
+    // equalizador sai do DOM.
+    backgroundColor: '#00000000',
     focusable: false, skipTaskbar: true, show: false, resizable: false, hasShadow: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

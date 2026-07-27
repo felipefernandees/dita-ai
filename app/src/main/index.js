@@ -21,8 +21,11 @@ let recStartedAt = 0
 let cancelled = false      // Esc marcou este ditado como cancelado
 let pendingUndo = null     // texto guardado pra função Anular
 let wantUndo = false       // Anular clicado antes da transcrição terminar
+let dictationSeq = 0       // numera cada ditado processado
+let abortedSeq = 0         // até que número o usuário mandou descartar
 
 async function processDictation(webmBuffer) {
+  const seq = ++dictationSeq
   const wasCancelled = cancelled
   cancelled = false
   if (!wasCancelled) rec.send('rec:phase', 'processing')
@@ -34,6 +37,15 @@ async function processDictation(webmBuffer) {
     // REGRA DE OURO: salva ANTES de colar
     const row = saveDictation({ text, rawText: raw, appName: targetApp, durationMs: Date.now() - recStartedAt })
     tray.updateLastTranscript(row.text)
+
+    // X apertado durante o "Transcrevendo…": não cola em lugar nenhum. Mas
+    // SALVA — a regra de ouro vale aqui também. Um clique errado não pode
+    // custar meio minuto de fala; o texto fica no histórico da bandeja.
+    //
+    // A comparação é por número de sequência, não por booleano: se a
+    // transcrição demorar e o usuário já tiver começado outro ditado, um
+    // "cancela" antigo não pode derrubar o ditado novo.
+    if (seq <= abortedSeq) { rec.hideAnimated(); return }
 
     if (wasCancelled) {
       // Esc: não cola. Guarda pra Anular; se o Felipe já clicou Anular, cola agora.
@@ -166,7 +178,17 @@ app.whenReady().then(async () => {
     else { wantUndo = true; rec.send('rec:phase', 'processing') } // transcrição ainda rodando: cola quando terminar
   })
   ipcMain.on('rec:finish', () => { dlog('IPC rec:finish state=' + machine.state()); machine.stopExternally() })
-  ipcMain.on('rec:cancel-hard', () => { dlog('IPC rec:cancel-hard state=' + machine.state()); machine.cancelExternally() })
+  ipcMain.on('rec:cancel-hard', () => {
+    dlog('IPC rec:cancel-hard state=' + machine.state())
+    if (machine.state() === 'recording') { machine.cancelExternally(); return }
+
+    // Ainda gravando o X para a gravação. Mas quando o popup mostra
+    // "Transcrevendo…" a máquina JÁ saiu de 'recording' — o áudio acabou e o
+    // whisper está processando. Nesse ponto cancelExternally() não tinha o que
+    // cancelar e o botão ficava inerte, que era o sintoma relatado.
+    abortedSeq = dictationSeq
+    rec.hideAnimated()
+  })
   ipcMain.on('rec:audio', () => dlog('IPC rec:audio'))
   ipcMain.on('rec:close', () => dlog('IPC rec:close'))
 
