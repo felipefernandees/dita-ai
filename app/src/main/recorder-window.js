@@ -34,6 +34,21 @@ export function createRecorderWindow() {
   // visível em todos os espaços, inclusive por cima de apps em tela cheia;
   // skipTransformProcessType evita o app "roubar" ativação e sumir de espaço
   keepOnAllWorkspaces(win)
+  // DITA_INPUT_DEBUG=1 registra os eventos de mouse que realmente chegam ao
+  // renderer. Foi o que revelou por que os botões do popup não respondiam no
+  // Windows: 1 mouseDown para 27 mouseUp, porque uma janela WS_EX_NOACTIVATE
+  // tem o mouse-down descartado pelo Chromium (MA_NOACTIVATEANDEAT). Sem medir
+  // isso não dá para distinguir "o clique não chega" de "o clique chega e o
+  // handler não roda" — as duas hipóteses pedem correções opostas.
+  if (process.env.DITA_INPUT_DEBUG) {
+    const fs = require('fs')
+    const alvo = require('path').join(require('os').homedir(), 'dita-input.log')
+    win.webContents.on('input-event', (_e, ev) => {
+      if (ev.type.startsWith('mouse')) {
+        try { fs.appendFileSync(alvo, `${new Date().toISOString()} ${ev.type} ${ev.x},${ev.y}\n`) } catch {}
+      }
+    })
+  }
   if (process.env.DITA_DEBUG) {
     win.webContents.on('console-message', (_e, _l, m) => console.log('RENDERER:', m))
     win.webContents.on('render-process-gone', (_e, d) => console.log('RENDERER GONE:', JSON.stringify(d)))

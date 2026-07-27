@@ -7,6 +7,23 @@ const GRAY = '#8e8e93'
 const BTN = '#48484a'
 const XBG = 'rgba(255,255,255,0.14)'
 
+// POR QUE OS BOTÕES DAQUI USAM onMouseUp E NÃO onClick
+//
+// A janela do popup é criada com `focusable: false` — ela NÃO PODE roubar o
+// foco, senão o app onde você está ditando perde o cursor no meio da frase.
+// No Windows isso vira WS_EX_NOACTIVATE, e clicar numa janela não-ativável faz
+// o sistema mandar WM_MOUSEACTIVATE; para essas janelas o Chromium responde
+// MA_NOACTIVATEANDEAT, e o "EAT" é literal: a mensagem de mouse-down é
+// DESCARTADA. Só o mouse-up chega à página.
+//
+// Um `click` no DOM exige down E up no mesmo elemento. Sem o down, o evento
+// nunca se forma e o onClick nunca dispara — os botões ficam inertes.
+//
+// Medido no app real (webContents 'input-event', ~27 cliques do usuário):
+// 1 mouseDown contra 27 mouseUp. O up é confiável; o down não é.
+//
+// No macOS o onClick funcionava porque o AppKit não come o clique de ativação
+// desse jeito — por isso o bug só apareceu no port.
 export default function Popup() {
   const [phase, setPhase] = useState('idle') // idle|recording|processing|done|error|cancelled
   const [result, setResult] = useState('')
@@ -174,11 +191,11 @@ export default function Popup() {
           <span style={{ flex: 1, color: GRAY, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             Selecione uma caixa de texto e cole com o botão
           </span>
-          <button onClick={() => window.dita.closePopup()} style={circleX}>{IconX}</button>
+          <button onMouseUp={() => window.dita.closePopup()} style={circleX}>{IconX}</button>
         </div>
         <div style={{ flex: 1, width: '100%', fontSize: 17, lineHeight: 1.35, overflow: 'hidden' }}>{result}</div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
-          <button onClick={() => { window.dita.copyText(result); window.dita.closePopup() }} style={{ ...grayBtn, padding: '9px 18px', fontSize: 13.5 }}>Copiar Ditado</button>
+          <button onMouseUp={() => { window.dita.copyText(result); window.dita.closePopup() }} style={{ ...grayBtn, padding: '9px 18px', fontSize: 13.5 }}>Copiar Ditado</button>
         </div>
       </div>
     )
@@ -195,7 +212,7 @@ export default function Popup() {
     body = (
       <div style={{ ...container(false), padding: '0 8px 0 16px', justifyContent: 'space-between', gap: 12 }}>
         <span style={{ color: GRAY, fontSize: 13 }}>Transcrição cancelada</span>
-        <button onClick={() => window.dita.undo()} style={grayBtn}>Anular</button>
+        <button onMouseUp={() => window.dita.undo()} style={grayBtn}>Anular</button>
       </div>
     )
   } else if (phase === 'error') {
@@ -207,7 +224,7 @@ export default function Popup() {
   } else if (phase === 'processing') {
     body = (
       <div style={{ ...container(false), padding: '0 10px', gap: 10 }}>
-        <button onClick={() => window.dita.cancelHard()} style={circleX}>{IconX}</button>
+        <button onMouseUp={() => window.dita.cancelHard()} style={circleX}>{IconX}</button>
         <span style={{ flex: 1, textAlign: 'center', color: GRAY, fontSize: 13 }}>Transcrevendo…</span>
         <div style={{ width: 24, flexShrink: 0 }} />
       </div>
@@ -215,9 +232,9 @@ export default function Popup() {
   } else {
     body = (
       <div style={{ ...container(false), padding: '0 10px', gap: 8 }}>
-        <button onClick={() => window.dita.cancelHard()} style={circleX}>{IconX}</button>
+        <button onMouseUp={() => window.dita.cancelHard()} style={circleX}>{IconX}</button>
         <canvas ref={canvasRef} style={{ flex: 1, height: '100%' }} />
-        <button onClick={() => window.dita.finish()} style={circleCheck}>{IconCheck}</button>
+        <button onMouseUp={() => window.dita.finish()} style={circleCheck}>{IconCheck}</button>
       </div>
     )
   }
