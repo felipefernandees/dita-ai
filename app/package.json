@@ -18,7 +18,8 @@
     "postinstall": "electron-builder install-app-deps",
     "whisper:vulkan": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-whisper-vulkan.ps1",
     "diag:gemini": "cross-env \"DITA_APP_NAME=Dita Aí\" electron scripts/diag-gemini.js",
-    "diag:gemini:audio": "cross-env \"DITA_APP_NAME=Dita Aí\" electron scripts/diag-gemini-audio.js"
+    "diag:gemini:audio": "cross-env \"DITA_APP_NAME=Dita Aí\" electron scripts/diag-gemini-audio.js",
+    "diag:gemini:cliente": "cross-env DITA_APP_NAME=\"Dita Aí\" electron scripts/diag-gemini-cliente.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.0",
