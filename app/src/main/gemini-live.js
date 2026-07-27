@@ -181,6 +181,26 @@ export function ehTurnoCompleto(frame) {
   return Boolean(obj && obj.serverContent && obj.serverContent.turnComplete)
 }
 
+// O sinal que realmente marca "a transcrição acabou" no nosso caso.
+//
+// MEDIDO em 2026-07-27 (scripts/diag-gemini-tempo.js), com o áudio enviado em
+// tempo real e o modelo silenciado:
+//
+//   +445ms  serverContent.inputTranscription  <- o texto, pronto
+//   +445ms  serverContent.speechState = "NON_SPEECH"
+//   +1103ms sessionResumptionUpdate  (e só keepalive daí pra frente, pra sempre)
+//
+// turnComplete NUNCA chega — o modelo está instruído a ficar calado, então não
+// existe turno dele pra completar. Esperar por ele significava aguardar o
+// PRAZO_FIM_MS inteiro em TODO ditado, com o texto pronto desde os 445ms.
+// Durante a fala o mesmo campo vale "SPEECH"; ele vira "NON_SPEECH" quando o
+// servidor considera a entrada encerrada.
+export function ehFimDaFala(frame) {
+  const obj = normalizarFrame(frame)
+  const estado = obj && obj.serverContent && obj.serverContent.speechState
+  return estado === 'NON_SPEECH'
+}
+
 export function ehSetupCompleto(frame) {
   const obj = normalizarFrame(frame)
   return Boolean(obj && obj.setupComplete)
@@ -308,9 +328,13 @@ export function criarSessao({
       try { onTexto(texto) } catch (err) { console.error('gemini-live: onTexto estourou:', err.message) }
     }
 
-    // turnComplete depois do encerrar() é o sinal de "não vem mais nada":
-    // devolve na hora em vez de esperar o PRAZO_FIM_MS inteiro.
-    if (ehTurnoCompleto(dados) && encerrada) terminar()
+    // Depois do encerrar(), qualquer um dos dois sinais quer dizer "não vem
+    // mais nada" — devolve na hora em vez de esperar o PRAZO_FIM_MS inteiro.
+    //
+    // speechState=NON_SPEECH é o que acontece na prática (445ms); turnComplete
+    // fica como rede para o caso de alguém afrouxar a instrução de silêncio e
+    // o modelo voltar a produzir turno.
+    if (encerrada && (ehFimDaFala(dados) || ehTurnoCompleto(dados))) terminar()
   })
 
   ws.on('error', (err) => {

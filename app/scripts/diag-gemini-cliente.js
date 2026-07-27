@@ -42,11 +42,13 @@ app.whenReady().then(async () => {
   const passo = 8000
   for (let i = 0; i < pcm.length; i += passo) {
     sessao.enviarAudio(pcm.subarray(i, i + passo))
-    await new Promise((r) => setTimeout(r, 60)) // mais rapido que tempo real
+    await new Promise((r) => setTimeout(r, 250)) // TEMPO REAL: e assim que o renderer alimenta
   }
 
   console.log('>>> encerrando sessao')
+  const t0 = Date.now()
   const texto = await sessao.encerrar()
+  console.log('espera apos soltar a tecla:', (Date.now() - t0) + 'ms')
 
   console.log('\n=== RESULTADO ===')
   console.log('texto      :', JSON.stringify(texto || ultimo))

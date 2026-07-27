@@ -40,7 +40,6 @@ export default function Popup() {
   const [pasted, setPasted] = useState(false)
   const [shown, setShown] = useState(false)
   const [session, setSession] = useState(0) // re-arma o equalizador a cada gravação
-  const [aoVivo, setAoVivo] = useState('')   // texto que o Gemini já devolveu neste ditado
   const [rtErro, setRtErro] = useState('')   // falha do motor remoto, visível em vez de silenciosa
   const canvasRef = useRef(null)
   const mediaRef = useRef({})
@@ -54,8 +53,6 @@ export default function Popup() {
       if (ch === 'rec:result') { setResult(payload.text); setPasted(!!payload.pasted); setPhase('done') }
       if (ch === 'rec:cancelled') setPhase('cancelled')
       if (ch === 'rec:closing') setShown(false)
-      // O payload é o texto ACUMULADO, não o incremento: substituir é o certo.
-      if (ch === 'rt:texto') setAoVivo(String(payload ?? ''))
       if (ch === 'rt:erro') setRtErro(String(payload ?? '').trim())
     })
   }, [])
@@ -309,7 +306,13 @@ export default function Popup() {
   // porque 'i' e 'm' não têm a mesma largura). A máscara desfia a borda
   // esquerda para o corte parecer um deslize contínuo, e não uma palavra
   // decapitada.
-  const temFita = Boolean(rtErro || aoVivo)
+  // Só ERRO aparece na fita. O texto transcrito NÃO: ele já vai ser colado no
+  // campo onde o cursor está, que é o destino de verdade. Mostrá-lo antes na
+  // pílula é ler a mesma frase duas vezes — e, pior, dava a impressão de que o
+  // app tinha parado ali, porque o texto ficava visível enquanto a sessão ainda
+  // esperava o sinal de fim. Esse atraso foi corrigido (ver ehFimDaFala em
+  // gemini-live.js); a fita de texto, por outro lado, era redundância pura.
+  const temFita = Boolean(rtErro)
   const fita = {
     flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', justifyContent: 'flex-end',
     alignItems: 'center', whiteSpace: 'nowrap', fontSize: 11.5,
@@ -383,7 +386,7 @@ export default function Popup() {
       <div style={{ ...container(false), padding: '0 10px', gap: 10 }}>
         <button onMouseUp={() => window.dita.cancelHard()} style={circleX}>{IconX}</button>
         {temFita
-          ? <div style={fita}><span>{rtErro || aoVivo}</span></div>
+          ? <div style={fita}><span>{rtErro}</span></div>
           : <span style={{ flex: 1, textAlign: 'center', color: GRAY, fontSize: 13 }}>Transcrevendo…</span>}
         <div style={{ width: 24, flexShrink: 0 }} />
       </div>
@@ -396,7 +399,7 @@ export default function Popup() {
           {/* o loop do equalizador remede clientWidth a cada frame, então ele
               se reajusta sozinho quando esta faixa encolhe para 26px */}
           <canvas ref={canvasRef} style={temFita ? { width: 26, flexShrink: 0, height: '100%' } : { flex: 1, minWidth: 0, height: '100%' }} />
-          {temFita && <div style={fita}><span>{rtErro || aoVivo}</span></div>}
+          {temFita && <div style={fita}><span>{rtErro}</span></div>}
         </div>
         <button onMouseUp={() => window.dita.finish()} style={circleCheck}>{IconCheck}</button>
       </div>

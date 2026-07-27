@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   montarSetup, montarChunk, montarFimDeTurno, extrairTexto, normalizarFrame,
-  ehTurnoCompleto, ehSetupCompleto, extrairErro, descreverFechamento,
+  ehTurnoCompleto, ehFimDaFala, ehSetupCompleto, extrairErro, descreverFechamento,
   urlSessao, modeloAtual, criarSessao, MODELO_PADRAO, MIME_PCM
 } from '../src/main/gemini-live.js'
 
@@ -191,6 +191,21 @@ describe('extrairTexto', () => {
 })
 
 describe('sinais de controle', () => {
+  // Este é o sinal que o servidor REALMENTE manda quando o modelo está
+  // silenciado — medido em 2026-07-27: inputTranscription e speechState
+  // NON_SPEECH chegam juntos em ~445ms, e turnComplete nunca vem. Sem ele a
+  // sessão esperava o prazo inteiro (4s) com o texto já pronto.
+  it('ehFimDaFala reconhece o NON_SPEECH e ignora o resto', () => {
+    expect(ehFimDaFala({ serverContent: { speechState: 'NON_SPEECH' } })).toBe(true)
+    // durante a fala o mesmo campo vale SPEECH: encerrar aqui cortaria o ditado
+    expect(ehFimDaFala({ serverContent: { speechState: 'SPEECH' } })).toBe(false)
+    expect(ehFimDaFala({ serverContent: {} })).toBe(false)
+    expect(ehFimDaFala({ sessionResumptionUpdate: {} })).toBe(false)
+    expect(ehFimDaFala(null)).toBe(false)
+    // aceita o frame cru, como chega do socket
+    expect(ehFimDaFala(JSON.stringify({ serverContent: { speechState: 'NON_SPEECH' } }))).toBe(true)
+  })
+
   it('ehTurnoCompleto', () => {
     expect(ehTurnoCompleto({ serverContent: { turnComplete: true } })).toBe(true)
     expect(ehTurnoCompleto({ serverContent: { turnComplete: false } })).toBe(false)
