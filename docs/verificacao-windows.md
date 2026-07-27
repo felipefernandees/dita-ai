@@ -32,9 +32,21 @@ arquivo novo e vazio — não um documento seu.
 | 8 | `Esc` sem estar gravando | o `Esc` chega ao app normalmente | supressão condicional |
 | 9 | Menu da bandeja → "Paste last transcript" | cola o último ditado | |
 | 10 | `Ctrl+Alt+V` | mesmo que o passo 9 | atalho global |
-| 11 | Preferências → seletor de atalho | mostra `Ctrl + Shift + Espaço` e `Ctrl direito`; **nenhum** `⌘`, `⌥` ou `Fn` | |
-| 12 | Trocar o atalho principal para `F5`, testar | `F5` passa a gravar sem reiniciar o app | helper reinicia sozinho |
+| 11 | Preferências → botão do atalho | mostra `Ctrl + Shift + Espaço` e `Ctrl direito` marcado; **nenhum** `⌘`, `⌥` ou `Fn` | |
+| 12 | Clicar no botão e apertar `F5`, testar | `F5` passa a gravar sem reiniciar o app | helper reinicia sozinho |
 | 13 | Segurar o atalho principal por 3 segundos | grava **uma vez** só, sem piscar | anti auto-repeat |
+| 14 | Clicar no botão e apertar só `J` | recusa e explica que a tecla sozinha pararia de funcionar em todos os programas; o atalho anterior continua valendo | validação da captura |
+| 15 | Clicar no botão, segurar `Ctrl+Shift` e soltar sem apertar mais nada | continua em "Pressione a combinação…", nada é gravado | modificador não é atalho |
+| 16 | Clicar no botão e apertar `Esc` | sai do modo de captura sem trocar nada | |
+| 17 | Trocar para `Ctrl+Alt+Ç` (tecla à direita do L) e testar | grava normal; o rótulo mostra `Ctrl + Alt + Ç` | tecla OEM do ABNT2 |
+| 18 | Preferências → push-to-talk → `Shift direito`, testar | o passo 3 passa a funcionar com `Shift direito` | |
+
+Não tente gravar `Alt+F4`, `Alt+Tab`, `Ctrl+Alt+Del` ou `Win+L` para ver a
+recusa: o Windows age nessas teclas antes da janela recebê-las — a janela fecha,
+o alternador aparece, a sessão bloqueia. É justamente por isso que elas são
+recusadas, e é por isso que a recusa é verificada nos testes automatizados
+(`tests/atalhos.test.js` e o cenário `parse` de `tests/helper-win.emit.test.js`)
+e não aqui.
 
 ## Diagnóstico
 
