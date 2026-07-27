@@ -7,7 +7,7 @@ import { join } from 'path'
 import { pipeline } from 'stream/promises'
 import { Readable } from 'stream'
 import { modelDir } from './paths.js'
-import { ffmpegPath, whisperServerCandidates } from './binaries.js'
+import { ffmpegPath, whisperServerCandidates, vulkanUtilizavel } from './binaries.js'
 
 // large-v3-turbo sem quantização: mesma velocidade do q5_0 no Apple Silicon,
 // com menos erro de palavra parecida. Pesa 1,6GB de RAM.
@@ -138,8 +138,25 @@ function assertPortFree(port) {
   })
 }
 
-// Tenta cada variante na ordem de whisperServerCandidates() (BLAS, depois
-// CPU puro). BLAS depende da DLL do OpenBLAS que vem no zip: se ela não
+// O candidato Vulkan é o único que precisa ser checado ANTES de tentar, porque
+// numa máquina sem GPU compatível ele não falha — sobe rodando em CPU sem
+// OpenBLAS, mais lento que o candidato `blas` que viria depois. Como o laço
+// abaixo só reage a processo morto, ele nunca perceberia a troca ruim.
+//
+// Descartar aqui, e não em binaries.js, mantém whisperServerCandidates() como
+// uma função pura de caminhos (barata, síncrona, testável sem executar nada) e
+// paga os ~160ms da sonda só quando o servidor vai realmente subir.
+function descartarVulkanInutil(candidates) {
+  return candidates.filter((bin) => {
+    if (!/[\\/]vulkan[\\/]/i.test(bin)) return true
+    if (vulkanUtilizavel(bin)) return true
+    console.error(`vulkan descartado (nenhum dispositivo compatível): ${bin}`)
+    return false
+  })
+}
+
+// Tenta cada variante na ordem de whisperServerCandidates() (Vulkan, BLAS,
+// depois CPU puro). BLAS depende da DLL do OpenBLAS que vem no zip: se ela não
 // carregar (falta de instrução de CPU compatível, DLL ausente por algum
 // motivo, release futuro que pare de publicar o asset blas) o processo morre
 // no boot sem erro de rede nenhum pra distinguir — por isso qualquer falha
@@ -151,7 +168,7 @@ function assertPortFree(port) {
 // exercitar o loop de fallback com múltiplos candidatos falsos sem depender
 // de um whisper-server de verdade.
 export async function startWhisperServerWithFallback({ candidates: candidatesOverride, ...opts } = {}) {
-  const candidates = candidatesOverride || whisperServerCandidates()
+  const candidates = descartarVulkanInutil(candidatesOverride || whisperServerCandidates())
   if (!candidates.length) throw new Error('nenhum whisper-server encontrado: rode `npm run deps:win`')
 
   const model = opts.modelPath || modelPath()

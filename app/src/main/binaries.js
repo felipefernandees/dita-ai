@@ -1,5 +1,6 @@
 import { join } from 'path'
 import { existsSync } from 'fs'
+import { spawnSync } from 'child_process'
 import ffmpegStatic from 'ffmpeg-static'
 
 const isWin = process.platform === 'win32'
@@ -40,7 +41,37 @@ export function whisperServerCandidates() {
     ? join(process.resourcesPath, 'whisper')
     : join(baseDir(), '../../resources/win/whisper')
 
-  return ['blas', 'cpu']
+  return ['vulkan', 'blas', 'cpu']
     .map((flavor) => join(root, flavor, 'whisper-server.exe'))
     .filter((p) => existsSync(p))
+}
+
+// O build Vulkan NÃO pode ser escolhido por tentativa e erro como os outros.
+//
+// Numa máquina sem GPU compatível ele não falha: imprime "Found 0 Vulkan
+// devices" e sobe normalmente, caindo no backend de CPU embutido — que é o
+// ggml-cpu genérico, SEM OpenBLAS. Ou seja, ele funcionaria, e funcionaria pior
+// que o candidato `blas` que viria depois. O laço de fallback, que só reage a
+// processo morto, jamais perceberia isso: o usuário sem GPU ficaria com a pior
+// das três opções, em silêncio.
+//
+// Por isso sondamos antes. A sonda roda o PRÓPRIO binário que seria usado, na
+// máquina real, e lê quantos dispositivos o ggml enxergou — em vez de inferir
+// de vulkan-1.dll ou do fabricante da GPU, que responderiam outra pergunta.
+// Custa ~160ms, uma vez, na subida do app.
+export function vulkanUtilizavel(binPath) {
+  try {
+    const r = spawnSync(binPath, ['--help'], {
+      encoding: 'utf8',
+      timeout: 15000,
+      windowsHide: true
+    })
+    const saida = `${r.stdout || ''}${r.stderr || ''}`
+    const m = saida.match(/Found (\d+) Vulkan devices/i)
+    return !!m && Number(m[1]) > 0
+  } catch {
+    // sonda falhou (binário corrompido, timeout): trata como indisponível e
+    // deixa o próximo candidato assumir
+    return false
+  }
 }

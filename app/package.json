@@ -15,7 +15,8 @@
     "deps:win": "node scripts/fetch-whisper-win.mjs",
     "icons:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/make-win-icons.ps1",
     "helper:win": "powershell -NoProfile -ExecutionPolicy Bypass -File ../helper-win/build.ps1",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps",
+    "whisper:vulkan": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-whisper-vulkan.ps1"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.0",
