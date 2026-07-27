@@ -2,7 +2,7 @@ import { spawn, execFile } from 'child_process'
 import { writeFile, unlink, readFile, rename, access } from 'fs/promises'
 import { createWriteStream, existsSync, mkdirSync, constants as fsConstants } from 'fs'
 import { createServer } from 'net'
-import { tmpdir } from 'os'
+import { cpus, tmpdir } from 'os'
 import { join } from 'path'
 import { pipeline } from 'stream/promises'
 import { Readable } from 'stream'
@@ -50,6 +50,20 @@ export async function ensureModel() {
   return target
 }
 
+// O '4' fixo vinha do tuning de Apple Silicon, onde o trabalho pesado é do
+// Metal e sobram os núcleos de eficiência. No Windows a inferência inteira é
+// CPU, e 4 threads deixavam metade do processador parado.
+//
+// Núcleos FÍSICOS, não lógicos: medido num Ryzen 7 5700G (8C/16T) com áudio de
+// 11,4s — 4 threads 22,0s | 8 threads 17,8s | 16 threads 27,3s. Passar dos
+// físicos faz os threads de SMT brigarem pelas mesmas unidades de execução e
+// fica pior que o ponto de partida.
+function threadsDeInferencia() {
+  if (process.env.DITA_THREADS) return Number(process.env.DITA_THREADS)
+  const logicos = cpus().length || 4
+  return Math.max(1, Math.min(8, Math.floor(logicos / 2)))
+}
+
 export async function startWhisperServer({
   binPath,
   modelPath: model = modelPath(),
@@ -61,7 +75,7 @@ export async function startWhisperServer({
 
   const proc = spawn(bin, [
     '--model', model, '--host', '127.0.0.1', '--port', String(port),
-    '--language', language, '--threads', '4',
+    '--language', language, '--threads', String(threadsDeInferencia()),
     // qualidade: beam search + mais candidatos reduzem palavra quebrada
     // (ex: "cancel amento"); entropy threshold evita fragmentar em pausas
     '--beam-size', '5', '--best-of', '5', '--entropy-thold', '2.8',

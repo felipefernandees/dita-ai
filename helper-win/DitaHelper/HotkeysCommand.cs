@@ -157,8 +157,16 @@ internal static class HotkeysCommand
                 Emit("esc");
                 return (IntPtr)1;
             }
-            // qualquer outra tecla com o PTT segurado = combo normal, aborta
-            if (_pttDown)
+            // Tecla de ação com o PTT segurado = combo normal (Ctrl+C etc),
+            // aborta o ditado. Modificador NÃO conta:
+            //
+            //   1. Em teclado ABNT2 o AltGr É o Right Alt, e o Windows injeta
+            //      um LeftCtrl junto — que auto-repete enquanto a tecla está
+            //      segurada. Com a regra antiga o AltGr abortava a si mesmo, e
+            //      o push-to-talk simplesmente não funcionava nesse layout.
+            //   2. Mesmo fora do ABNT2, segurar Shift no meio da fala não é
+            //      intenção de cancelar ditado nenhum.
+            if (_pttDown && !EhModificador(vk))
             {
                 _pttCombo = true;
                 Emit("combo");
@@ -175,6 +183,15 @@ internal static class HotkeysCommand
 
         return Native.CallNextHookEx(_hook, nCode, wParam, lParam);
     }
+
+    // Teclas que só modificam outras. Segurar uma delas nunca é "o usuário
+    // quis fazer outra coisa", então não aborta um push-to-talk em andamento.
+    private static bool EhModificador(int vk) =>
+        vk == Native.VK_SHIFT || vk == Native.VK_LSHIFT || vk == Native.VK_RSHIFT ||
+        vk == Native.VK_CONTROL || vk == Native.VK_LCONTROL || vk == Native.VK_RCONTROL ||
+        vk == Native.VK_MENU || vk == Native.VK_LMENU || vk == Native.VK_RMENU ||
+        vk == Native.VK_LWIN || vk == Native.VK_RWIN ||
+        vk == Native.VK_CAPITAL;
 
     // Chamado de dentro do HookCallback: só enfileira. Add() numa
     // BlockingCollection sem capacidade nunca bloqueia o produtor.

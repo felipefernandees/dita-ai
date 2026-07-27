@@ -76,4 +76,24 @@ describe.skipIf(!hasDotnet)('HookCallback não bloqueia no stdout', () => {
     expect(run.status, `stderr=${run.stderr}`).toBe(0)
     expect(run.stdout).toBe('{"event":"no_permission"}\n')
   }, 240000)
+
+  // Regressão: com push-to-talk no Right Alt (a opção de quem tem teclado 60%),
+  // em layout ABNT2 essa tecla É o AltGr, e o Windows injeta um LeftCtrl junto
+  // que auto-repete enquanto ela está segurada. A regra antiga tratava qualquer
+  // tecla como "combo" e abortava — o AltGr abortava a si mesmo e o PTT
+  // simplesmente não gravava nada nesse layout.
+  it('AltGr como PTT: modificador não aborta, tecla de ação aborta', () => {
+    const run = spawnSync(buildHarness(), ['altgr'], { encoding: 'utf8', timeout: 30000 })
+    expect(run.status, `stderr=${run.stderr}`).toBe(0)
+
+    const eventos = run.stdout.trim().split('\n').map((l) => JSON.parse(l).event)
+
+    expect(eventos).toEqual([
+      'ptt_down',  // segurou o AltGr
+      'ptt_up',    // soltou: o LeftCtrl injetado e o Shift NÃO abortaram
+      'ptt_down',  // segurou de novo
+      'combo',     // agora sim, tecla de ação junto
+      'ptt_abort'  // e por isso aborta
+    ])
+  }, 240000)
 })

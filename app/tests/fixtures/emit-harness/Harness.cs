@@ -21,8 +21,55 @@ internal static class Harness
     private static MethodInfo Priv(string name) =>
         typeof(HotkeysCommand).GetMethod(name, BindingFlags.NonPublic | BindingFlags.Static)!;
 
-    private static int Main(string[] args) =>
-        args.Length > 0 && args[0] == "drain" ? Drain() : NonBlocking();
+    private static int Main(string[] args) => (args.Length > 0 ? args[0] : "") switch
+    {
+        "drain" => Drain(),
+        "altgr" => AltGr(),
+        _ => NonBlocking()
+    };
+
+    private static FieldInfo Campo(string name) =>
+        typeof(HotkeysCommand).GetField(name, BindingFlags.NonPublic | BindingFlags.Static)!;
+
+    // Cenário 3: push-to-talk no Right Alt, que em teclado ABNT2 É o AltGr.
+    // O Windows injeta um LeftCtrl junto do AltGr, e ele auto-repete enquanto a
+    // tecla está segurada. Com a regra antiga ("qualquer tecla aborta"), esse
+    // LeftCtrl abortava o próprio ditado e o PTT nunca funcionava nesse layout.
+    //
+    // Imprime os eventos no stdout, um por linha, para o teste conferir a
+    // sequência. Modificador não pode virar combo; tecla de ação tem que virar.
+    private static int AltGr()
+    {
+        Priv("StartWriter").Invoke(null, null);
+        Campo("_pttVk").SetValue(null, Native.VK_RMENU);
+
+        var cb = (Native.HookProc)Delegate.CreateDelegate(
+            typeof(Native.HookProc), Priv("HookCallback"));
+
+        void Tecla(int vk, int msg)
+        {
+            var kb = new Native.KBDLLHOOKSTRUCT { vkCode = (uint)vk };
+            IntPtr p = Marshal.AllocHGlobal(Marshal.SizeOf<Native.KBDLLHOOKSTRUCT>());
+            Marshal.StructureToPtr(kb, p, false);
+            cb(0, (IntPtr)msg, p);
+            Marshal.FreeHGlobal(p);
+        }
+
+        // --- segurar AltGr e falar: o LeftCtrl injetado não pode abortar ---
+        Tecla(Native.VK_RMENU, Native.WM_KEYDOWN);      // espera ptt_down
+        Tecla(Native.VK_LCONTROL, Native.WM_KEYDOWN);   // AltGr injeta isto
+        Tecla(Native.VK_LCONTROL, Native.WM_KEYDOWN);   // e auto-repete
+        Tecla(Native.VK_LSHIFT, Native.WM_KEYDOWN);     // Shift também não aborta
+        Tecla(Native.VK_RMENU, Native.WM_KEYUP);        // espera ptt_up, NÃO abort
+
+        // --- AltGr + tecla de ação: aí sim é combo de verdade ---
+        Tecla(Native.VK_RMENU, Native.WM_KEYDOWN);      // ptt_down
+        Tecla(Native.VK_V, Native.WM_KEYDOWN);          // combo
+        Tecla(Native.VK_RMENU, Native.WM_KEYUP);        // ptt_abort
+
+        Priv("Drain").Invoke(null, null);
+        return 0;
+    }
 
     // Cenário 2: saída ordenada. O que já está na fila precisa chegar ao stdout
     // antes de o processo sair — é o caminho do "no_permission", que enfileira

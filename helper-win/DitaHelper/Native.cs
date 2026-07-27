@@ -14,13 +14,21 @@ internal static class Native
     public const int VK_SHIFT = 0x10;
     public const int VK_CONTROL = 0x11;
     public const int VK_MENU = 0x12;
+    public const int VK_CAPITAL = 0x14;
     public const int VK_ESCAPE = 0x1B;
     public const int VK_SPACE = 0x20;
+    public const int VK_LWIN = 0x5B;
     public const int VK_RWIN = 0x5C;
     public const int VK_F5 = 0x74;
     public const int VK_V = 0x56;
+    // O hook low-level entrega sempre o VK lateralizado (VK_LCONTROL/
+    // VK_RCONTROL), nunca o genérico VK_CONTROL — mas checamos os dois porque
+    // GetAsyncKeyState, usado no ToggleSpec, responde pelo genérico.
+    public const int VK_LSHIFT = 0xA0;
     public const int VK_RSHIFT = 0xA1;
+    public const int VK_LCONTROL = 0xA2;
     public const int VK_RCONTROL = 0xA3;
+    public const int VK_LMENU = 0xA4;
     public const int VK_RMENU = 0xA5;
 
     [StructLayout(LayoutKind.Sequential)]
