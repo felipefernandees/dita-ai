@@ -1,0 +1,161 @@
+# CI do Dita Aí — a rede de segurança do port para Windows.
+#
+# O QUE ESTE WORKFLOW PROVA
+#   • o helper nativo de cada plataforma COMPILA (Swift no macOS, C# no Windows);
+#   • `npm ci` reconstrói o better-sqlite3 para a ABI do Electron (postinstall
+#     roda `electron-builder install-app-deps`) — sem isso o db.test.js morre;
+#   • `electron-vite build` gera main/preload/renderer nas duas plataformas;
+#   • a suíte do vitest passa nas duas plataformas;
+#   • no Windows: os binários do whisper.cpp baixam dos releases oficiais e os
+#     ícones .ico são gerados por System.Drawing.
+#
+# O QUE ESTE WORKFLOW **NÃO** PROVA
+#   • o hook global de teclado (WH_KEYBOARD_LL / Carbon) reagindo a uma tecla
+#     FÍSICA — só um teclado de verdade produz um evento não-injetado;
+#   • o microfone;
+#   • a colagem na janela em foco (SendInput / CGEvent);
+#   • o empacotamento do macOS (`npm run build:mac`, electron-builder --mac,
+#     afterPack + codesign) — este CI só roda `npm run build` no macOS;
+#   • a transcrição de ponta a ponta (o teste do whisper baixa 1,6GB e fica
+#     atrás de RUN_WHISPER=1, que deliberadamente NÃO é definido aqui).
+#
+# Tudo isso continua sendo trabalho humano: docs/verificacao-windows.md.
+#
+# POR QUE O JOB `macos` EXISTE
+#   Este branch é um port feito inteiramente no Windows. Ninguém executa o
+#   projeto num Mac antes do merge. O job `macos` é a única coisa entre uma
+#   regressão no lado macOS e os usuários que já usam o app lá. Ele não é
+#   opcional e não deve virar `continue-on-error`.
+
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+# Um push novo no mesmo ref cancela o run anterior que ficou obsoleto.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows (build + testes)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Electron 34 embute o Node 20, e é ELE que executa a suíte (o script
+      # `test` roda o vitest sob ELECTRON_RUN_AS_NODE=1). Usar 20 aqui mantém
+      # o runtime do build igual ao runtime dos testes.
+      #
+      # `cache: npm` guarda o cache de DOWNLOAD do npm (~/.npm), não o
+      # node_modules: `electron-builder install-app-deps` continua recompilando
+      # o better-sqlite3 do zero em todo run. Cachear node_modules esconderia
+      # exatamente a quebra que este job existe para pegar.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      # helper-win/DitaHelper/DitaHelper.csproj e o harness de teste em
+      # app/tests/fixtures/emit-harness são net8.0-windows. A imagem do runner
+      # normalmente já traz o SDK 8, mas fixar aqui evita que uma troca de
+      # imagem derrube o build sem aviso.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: npm ci (postinstall reconstrói o better-sqlite3 p/ o Electron)
+        run: npm ci
+
+      # Precisa vir ANTES do `npm test`: helper-win.integration.test.js só roda
+      # se helper-win/dist/dita-helper.exe existir, e pular em silêncio aqui
+      # seria perder o teste que prova que o helper sobe e responde.
+      - name: Compilar o helper C# (dita-helper.exe)
+        run: npm run helper:win
+
+      # Também antes do `npm test`: binaries.test.js exige as DUAS pastas
+      # (blas e cpu) em app/resources/win/whisper. Não cacheamos este download
+      # de propósito — o cache mascararia um fetch-whisper-win.mjs quebrado
+      # (os nomes dos assets do whisper.cpp mudam entre releases, e o casamento
+      # por regex é justamente o que pode apodrecer sem ninguém notar).
+      - name: Baixar os binários do whisper.cpp (blas + cpu)
+        run: npm run deps:win
+
+      # Gera app/build/icon.ico e app/resources/win/tray.ico. Não é exigido por
+      # `npm run build`, mas É exigido por `build:win` (o workflow de release),
+      # e o script depende de System.Drawing sob o Windows PowerShell 5.1 —
+      # vale exercitar aqui, onde a falha é barata.
+      - name: Gerar os ícones .ico
+        run: npm run icons:win
+
+      # Build ANTES dos testes, de propósito: pcm-worklet.integration.test.js
+      # abre uma janela Electron de verdade contra app/out/renderer e se
+      # AUTO-PULA quando esse diretório não existe. Rodando `npm test` antes do
+      # build, o teste que prova que o AudioWorklet carrega no empacotado
+      # sumiria da suíte sem nenhum vermelho — um verde mentiroso.
+      - name: electron-vite build
+        run: npm run build
+
+      # RUN_WHISPER fica indefinido: o teste de integração do whisper baixa o
+      # modelo de 1,6GB e não pode rodar aqui.
+      - name: npm test
+        run: npm test
+
+  macos:
+    name: macOS (build + testes)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      - name: npm ci (postinstall reconstrói o better-sqlite3 p/ o Electron)
+        run: npm ci
+
+      # O helper Swift não é usado por nenhum teste (helper-path.test.js só
+      # compara strings de caminho), mas é metade do lado macOS do projeto e
+      # `npm run build:mac` o exige em extraResources. Compilar aqui é o que
+      # transforma "alguém mexeu no DitaHotkeys.swift" em vermelho.
+      - name: Compilar o helper Swift (dita-hotkeys)
+        working-directory: helper
+        run: bash build.sh
+
+      - name: electron-vite build
+        run: npm run build
+
+      # Testes que se auto-pulam neste runner, verificado lendo cada arquivo:
+      #   • helper-win.emit.test.js — `hasDotnet` começa com
+      #     `process.platform === 'win32'`, que curto-circuita antes de sequer
+      #     invocar o `dotnet`. Os DOIS describes usam `skipIf(!hasDotnet)`,
+      #     então o arquivo inteiro pula limpo, mesmo que o runner do macOS
+      #     traga um dotnet no PATH.
+      #   • helper-win.integration.test.js — mesma guarda de plataforma.
+      #   • whisper.integration.test.js — atrás de RUN_WHISPER=1.
+      #   • pcm-worklet.integration.test.js — a guarda `temElectron` aponta para
+      #     node_modules/electron/dist/electron.exe, caminho que NÃO existe no
+      #     macOS (lá é Electron.app). Ou seja: este teste nunca roda no macOS.
+      #     É uma lacuna real de cobertura, não um bug do CI — está anotada no
+      #     relatório do PR.
+      - name: npm test
+        run: npm test

@@ -125,6 +125,18 @@ Fase 1 (o núcleo: gravar, transcrever, colar, histórico, preferências) está 
 
 Testes: `cd app && npm test`.
 
+## Instalador pronto (Windows) e integração contínua
+
+Todo push e todo PR disparam o [CI](.github/workflows/ci.yml), que roda em **duas** máquinas: `windows-latest` e `macos-latest`. Nas duas ele compila o helper nativo, roda `electron-vite build` e executa a suíte. O job do macOS existe porque o port para Windows foi feito inteiramente no Windows — sem ele, uma regressão no lado macOS só apareceria na máquina de um usuário.
+
+O que nenhum dos dois cobre: atalho global com tecla física, microfone e colagem na janela em foco. Isso é verificação humana, com roteiro em [docs/verificacao-windows.md](docs/verificacao-windows.md).
+
+**Baixar o instalador do Windows:** quando existir uma release, ela fica em **[Releases](../../releases)** — pegue o `.exe`. Ele é montado pelo [workflow de release](.github/workflows/release.yml) a partir de uma tag `v*`, no próprio GitHub, e já traz os backends `blas` e `cpu` do whisper.cpp. Não traz o backend Vulkan (opcional, compilado localmente com `npm run whisper:vulkan`) nem o modelo de 1,6GB, que é baixado no primeiro uso.
+
+> **O instalador não é assinado.** O SmartScreen vai barrar a primeira execução: **"Mais informações" → "Executar assim mesmo"**. Assinar exigiria um certificado de code signing comprado de uma CA e guardado como secret do repositório — não temos. Se você prefere não rodar binário não assinado, compile pelo código-fonte: [docs/windows.md](docs/windows.md).
+
+Enquanto não houver release publicada, o caminho é o de sempre: `npm run build:win` na sua máquina.
+
 ## Contribuindo
 
 Pegou o projeto na comunidade Core, melhorou alguma coisa? Abra um PR aqui **e** publique sua atualização no Build in Public da plataforma contando o que mudou. É pra isso que ele está aberto.
