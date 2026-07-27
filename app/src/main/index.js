@@ -38,16 +38,16 @@ async function processDictation(webmBuffer) {
     const row = saveDictation({ text, rawText: raw, appName: targetApp, durationMs: Date.now() - recStartedAt })
     tray.updateLastTranscript(row.text)
 
-    // X apertado durante o "Transcrevendo…": não cola em lugar nenhum. Mas
-    // SALVA — a regra de ouro vale aqui também. Um clique errado não pode
-    // custar meio minuto de fala; o texto fica no histórico da bandeja.
+    // X apertado durante o "Transcrevendo…". Trata igual ao Esc: não cola,
+    // mas SALVA (a regra de ouro vale aqui também — um clique errado não pode
+    // custar meio minuto de fala) e deixa o texto disponível pro Anular.
     //
     // A comparação é por número de sequência, não por booleano: se a
     // transcrição demorar e o usuário já tiver começado outro ditado, um
     // "cancela" antigo não pode derrubar o ditado novo.
-    if (seq <= abortedSeq) { rec.hideAnimated(); return }
+    const abortado = seq <= abortedSeq
 
-    if (wasCancelled) {
+    if (wasCancelled || abortado) {
       // Esc: não cola. Guarda pra Anular; se o Felipe já clicou Anular, cola agora.
       if (wantUndo) { wantUndo = false; await pasteText(text); rec.hideAnimated() }
       else { pendingUndo = text; setTimeout(() => { pendingUndo = null }, 6000) }
@@ -187,7 +187,14 @@ app.whenReady().then(async () => {
     // whisper está processando. Nesse ponto cancelExternally() não tinha o que
     // cancelar e o botão ficava inerte, que era o sintoma relatado.
     abortedSeq = dictationSeq
-    rec.hideAnimated()
+
+    // Mostra a tarja "Transcrição cancelada" em vez de simplesmente sumir: sem
+    // ela o popup fecharia sem confirmar nada e o usuário ficaria sem saber se
+    // o clique pegou. Os 2s dão tempo de ler e de clicar em Anular, que cola o
+    // texto assim que a transcrição terminar.
+    rec.toast()
+    rec.send('rec:cancelled')
+    setTimeout(() => { if (!wantUndo) rec.hideAnimated() }, 2000)
   })
   ipcMain.on('rec:audio', () => dlog('IPC rec:audio'))
   ipcMain.on('rec:close', () => dlog('IPC rec:close'))

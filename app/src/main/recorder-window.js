@@ -29,6 +29,15 @@ export function createRecorderWindow() {
     // retângulo sólido ao sair da gravação, que é justo quando o <canvas> do
     // equalizador sai do DOM.
     backgroundColor: '#00000000',
+    // O Windows 11 arredonda janelas sem moldura por conta própria e pinta um
+    // backdrop OPACO atrás delas. Era esse backdrop — não o CSS, não o
+    // backgroundColor — que aparecia como um retângulo em volta da pílula.
+    // Desligar devolve o controle do formato pro border-radius do CSS, que é
+    // quem sabe que a pílula muda de raio entre as fases (999 na gravação, 22
+    // no card grande). Comprovado por captura de tela: com roundedCorners
+    // ligado o retângulo aparece, desligado as quinas ficam transparentes.
+    // No macOS a opção é ignorada, então não muda nada lá.
+    roundedCorners: false,
     focusable: false, skipTaskbar: true, show: false, resizable: false, hasShadow: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
