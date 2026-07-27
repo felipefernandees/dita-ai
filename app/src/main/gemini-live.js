@@ -11,13 +11,61 @@ import WebSocket from 'ws'
 // (montarSetup, montarChunk, extrairTexto, ehTurnoCompleto, extrairErro), que
 // os testes exercitam sem rede nem chave, e a fábrica criarSessao(), que só
 // costura socket + fila + callbacks em volta delas.
+//
+// ─────────────────────────────────────────────────────────────────────────
+// PROTOCOLO — NÃO "SIMPLIFIQUE" NADA DAQUI SEM MEDIR DE NOVO
+// Verificado em 2026-07-27 contra o endpoint real do Google, com chave real
+// e PCM16 16 kHz real. O script que prova cada item está em
+// scripts/diag-gemini-audio.js — rode-o antes de mudar qualquer coisa.
+// A versão anterior deste arquivo errava 3 dos 4 pontos abaixo, e o app caía
+// calado no motor local a cada ditado.
+//
+//  1. MODELO: `models/gemini-2.0-flash-exp` NÃO EXISTE MAIS. O servidor fecha
+//     com 1008 "is not found for API version v1alpha, or is not supported for
+//     bidiGenerateContent". Os ids que esta chave aceita hoje em
+//     bidiGenerateContent (via ListModels):
+//       models/gemini-2.5-flash-native-audio-latest
+//       models/gemini-2.5-flash-native-audio-preview-09-2025
+//       models/gemini-2.5-flash-native-audio-preview-12-2025
+//       models/gemini-3.1-flash-live-preview      <- o nosso padrão
+//       models/gemini-3.5-live-translate-preview
+//
+//  2. responseModalities É ['AUDIO'], não ['TEXT']. Pedir TEXT fecha com 1007
+//     "The requested combination of response modalities (TEXT) is not
+//     supported by the model". Os modelos Live só emitem áudio — o texto que
+//     a gente quer vem por outro caminho (item 4).
+//
+//  3. `realtimeInput.mediaChunks` foi DEPRECADO: 1007 "realtime_input.
+//     media_chunks is deprecated. Use audio, video, or text instead". O frame
+//     hoje é `{ realtimeInput: { audio: { mimeType, data } } }`.
+//
+//  4. O texto do ditado NÃO está em modelTurn.parts[].text — aquilo é a
+//     RESPOSTA falada do modelo. O que interessa é
+//     `serverContent.inputTranscription.text`, a transcrição do que o USUÁRIO
+//     falou, habilitada por `inputAudioTranscription: {}` no setup. Sem esse
+//     campo no setup a transcrição simplesmente nunca chega.
+//
+//  Ainda sobre o setup: a systemInstruction de "gravador silencioso" não é
+//  enfeite. Sem ela o modelo RESPONDE ao usuário — medido: veio "Entendido!
+//  Para fazer um bom resumo, você poderia me passar..." e dezenas de partes
+//  de áudio que a gente paga, recebe e descarta. Com ela: zero modelTurn,
+//  zero outputTranscription, fechamento limpo em 1000.
+//
+//  E `automaticActivityDetection` fica LIGADO (o padrão). Desligar exige
+//  mandar activityStart/activityEnd na mão; sem isso o servidor não considera
+//  que houve fala e não transcreve NADA — testado, deu string vazia.
+//
+//  Comportamento observado (não é bug nosso): a transcrição chega num único
+//  frame no fim da fala, não palavra a palavra. O texto na pílula portanto
+//  aparece de uma vez no final.
+// ─────────────────────────────────────────────────────────────────────────
 
 // ATENÇÃO: é ESTE o botão a girar quando parar de funcionar.
-// Os ids de modelo experimentais do Gemini rodam e são aposentados sem aviso
-// (o "-exp" no nome é literalmente isso). Quando a sessão começar a fechar
-// logo depois do setup com erro de modelo inválido, troque aqui — ou defina
-// DITA_GEMINI_MODEL pra testar um id novo sem recompilar.
-export const MODELO_PADRAO = 'models/gemini-2.0-flash-exp'
+// Os ids "preview"/"latest" da Live API são aposentados sem aviso. Quando a
+// sessão começar a fechar logo depois do setup com erro de modelo inválido,
+// troque aqui por outro da lista acima — ou defina DITA_GEMINI_MODEL pra
+// testar um id novo sem recompilar.
+export const MODELO_PADRAO = 'models/gemini-3.1-flash-live-preview'
 
 export function modeloAtual() {
   return process.env.DITA_GEMINI_MODEL || MODELO_PADRAO
@@ -31,35 +79,37 @@ const ENDPOINT =
 // buffer chega pronto.
 export const MIME_PCM = 'audio/pcm;rate=16000'
 
-// O Gemini é um modelo de conversa, não um transcritor: sem esta instrução ele
-// RESPONDE ao que ouviu ("Claro! Posso ajudar com isso") em vez de escrever o
-// que foi dito. É o que transforma a Live API num motor de ditado.
-const INSTRUCAO_TRANSCRICAO = [
-  'Você é um transcritor literal de fala em português do Brasil.',
-  'Escreva EXATAMENTE o que o usuário falar, com pontuação e acentuação corretas.',
-  'Nunca responda, nunca comente, nunca faça perguntas, nunca traduza.',
-  'Não acrescente prefixos, aspas, marcações nem explicações.',
-  'Se não houver fala audível, não escreva nada.'
-].join(' ')
+// O Gemini Live é um modelo de CONVERSA. Quem transcreve é o
+// inputAudioTranscription do servidor, não o modelo — então o trabalho desta
+// instrução é só um: calar o modelo. Sem ela ele responde ao usuário em áudio
+// (medido em 2026-07-27), e a gente paga por cada token dessa resposta que vai
+// direto pro lixo. Não troque por um texto de "transcritor literal": isso
+// convida o modelo a falar de novo.
+const INSTRUCAO_SILENCIO =
+  'Você é um gravador silencioso. NUNCA responda, NUNCA comente, NUNCA gere áudio. Permaneça em silêncio absoluto sempre.'
 
 export function urlSessao(apiKey) {
   return `${ENDPOINT}?key=${encodeURIComponent(String(apiKey ?? ''))}`
 }
 
-// Primeiro frame da conexão. `responseModalities: ['TEXT']` é obrigatório:
-// o padrão da Live API é ÁUDIO, e sem isso o servidor devolve voz sintetizada
-// em vez do texto que a gente precisa colar.
+// Primeiro frame da conexão. Cada campo aqui foi arrancado do servidor na
+// marra; leia o bloco PROTOCOLO no topo antes de mexer.
 export function montarSetup(model = modeloAtual()) {
   return {
     setup: {
       model: String(model || MODELO_PADRAO),
       generationConfig: {
-        responseModalities: ['TEXT'],
+        // ['TEXT'] é RECUSADO (close 1007). Modelo Live só emite áudio.
+        responseModalities: ['AUDIO'],
         // ditado não é criatividade: qualquer temperatura acima de zero vira
         // paráfrase do que foi falado
         temperature: 0
       },
-      systemInstruction: { parts: [{ text: INSTRUCAO_TRANSCRICAO }] }
+      // O PULO DO GATO: é isto que faz o servidor mandar
+      // serverContent.inputTranscription.text — o texto do que o USUÁRIO
+      // falou. Sem este campo a sessão conecta, funciona e não transcreve nada.
+      inputAudioTranscription: {},
+      systemInstruction: { parts: [{ text: INSTRUCAO_SILENCIO }] }
     }
   }
 }
@@ -71,18 +121,21 @@ function paraBuffer(pcm16) {
   return Buffer.from(pcm16 ?? [])
 }
 
+// `realtimeInput.mediaChunks` (um ARRAY) foi deprecado e hoje derruba a sessão
+// com 1007. O formato vivo é um único objeto `audio`.
 export function montarChunk(pcm16) {
   return {
     realtimeInput: {
-      mediaChunks: [{ mimeType: MIME_PCM, data: paraBuffer(pcm16).toString('base64') }]
+      audio: { mimeType: MIME_PCM, data: paraBuffer(pcm16).toString('base64') }
     }
   }
 }
 
-// Frame de "acabei de falar". Fecha o turno pro modelo emitir o resto do texto
-// em vez de ficar esperando mais áudio.
+// Frame de "acabei de falar". Com a detecção automática de atividade ligada é
+// `audioStreamEnd` que fecha o turno — o antigo clientContent.turnComplete
+// mandava um turno de conversa vazio, que não é o que a gente quer dizer.
 export function montarFimDeTurno() {
-  return { clientContent: { turns: [], turnComplete: true } }
+  return { realtimeInput: { audioStreamEnd: true } }
 }
 
 // Os frames chegam como Buffer (é o que o `ws` entrega); aceitar string e
@@ -99,21 +152,28 @@ export function normalizarFrame(frame) {
   }
 }
 
-// O texto vem fatiado: várias `parts` no mesmo frame E vários frames no mesmo
-// turno. Concatenar CRU (sem separador) é o certo — o modelo já manda os
-// espaços onde eles existem, e inserir um por conta própria racharia palavra
-// no meio, o mesmo bug que o whisper tinha em juntarSegmentos().
+// A transcrição do que o USUÁRIO falou. É `serverContent.inputTranscription`,
+// e SÓ ela.
+//
+// Nunca leia `serverContent.modelTurn.parts[].text`: aquilo é a RESPOSTA do
+// modelo ao usuário ("Entendido! Para fazer um bom resumo..."). Um app de
+// ditado que cola aquele texto cola a fala do robô no lugar da fala da pessoa.
+// A INSTRUCAO_SILENCIO já faz o modelTurn nunca aparecer, mas ignorar aqui
+// também é cinto de segurança: se um dia a instrução for enfraquecida, o pior
+// que acontece é gastar tokens à toa, não escrever besteira no editor do
+// usuário. `outputTranscription` (a transcrição da voz do modelo) fica de fora
+// pelo mesmo motivo.
+//
+// Concatenar CRU (sem separador) na hora de somar frames é o certo — o
+// servidor já manda os espaços onde eles existem, e inserir um por conta
+// própria racharia palavra no meio, o mesmo bug que o whisper tinha em
+// juntarSegmentos().
 export function extrairTexto(frame) {
   const obj = normalizarFrame(frame)
-  const partes = obj && obj.serverContent && obj.serverContent.modelTurn
-    ? obj.serverContent.modelTurn.parts
+  const t = obj && obj.serverContent && obj.serverContent.inputTranscription
+    ? obj.serverContent.inputTranscription.text
     : null
-  if (!Array.isArray(partes)) return ''
-  let texto = ''
-  for (const p of partes) {
-    if (p && typeof p.text === 'string') texto += p.text
-  }
-  return texto
+  return typeof t === 'string' ? t : ''
 }
 
 export function ehTurnoCompleto(frame) {
@@ -162,7 +222,13 @@ const PRAZO_HANDSHAKE_MS = 2500
 // Depois de encerrar(), quanto esperamos pelo turnComplete/close antes de
 // entregar o que já temos. Sem uma espera o último trecho da frase se perde;
 // com uma espera longa demais o popup fica pendurado.
-const PRAZO_FIM_MS = 1800
+//
+// Por que 4s e não os 1,8s de antes: o servidor NÃO transcreve incrementalmente
+// (ver bloco PROTOCOLO). A transcrição inteira chega num frame só depois do
+// audioStreamEnd, então este prazo não é "o rabinho da última palavra" — é a
+// frase toda. Estourar aqui significa devolver vazio e cair no motor local,
+// que é exatamente o bug que este arquivo existe pra consertar.
+const PRAZO_FIM_MS = 4000
 
 export function criarSessao({
   apiKey,
