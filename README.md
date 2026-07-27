@@ -1,28 +1,38 @@
 # Dita Aí 🎙️
 
-**Ditado por voz no Mac inteiro, rodando 100% local.** Você segura `Fn+Espaço`, fala, solta, e o texto cai no campo onde o cursor está: WhatsApp Web, Notion, terminal, prompt do Claude, qualquer lugar. Nada sobe pra nuvem, nada tem mensalidade.
+**Ditado por voz no computador inteiro, rodando 100% local.** Você segura um atalho, fala, solta, e o texto cai no campo onde o cursor está: WhatsApp Web, Notion, terminal, prompt do Claude, qualquer lugar. Nada sobe pra nuvem, nada tem mensalidade.
 
 É um clone funcional do Wispr Flow, feito em Electron + whisper.cpp, com transcrição em português.
 
-> **Aviso honesto:** este é um projeto de uso interno que abrimos pra comunidade. Ele funciona, mas não é um app de loja: você vai compilar na sua máquina, o app não é assinado pela Apple e você precisa liberar duas permissões no sistema. Se você mexe com terminal, leva 15 minutos. Se nunca abriu um terminal, chame alguém que já abriu.
+> **Aviso honesto:** este é um projeto de uso interno que abrimos pra comunidade. Ele funciona, mas não é um app de loja: você vai compilar na sua máquina, o app não é assinado, e você precisa liberar permissão no sistema. Se você mexe com terminal, leva 15 minutos. Se nunca abriu um terminal, chame alguém que já abriu.
 
 ---
 
-## O que você precisa
+## Escolha sua plataforma
+
+| Sistema | Atalho padrão | Guia |
+|---|---|---|
+| **macOS** (Apple Silicon) | `Fn+Espaço` | continue lendo abaixo |
+| **Windows 10/11** x64 | `Ctrl+Shift+Espaço` | **[docs/windows.md](docs/windows.md)** |
+
+---
+
+## O que você precisa (macOS)
 
 | Item | Por quê |
 |---|---|
 | **macOS com Apple Silicon** (M1 em diante) | os caminhos do Homebrew são de Apple Silicon (`/opt/homebrew`) e o whisper roda em Metal |
 | **16GB de RAM** (recomendado) | o modelo carregado ocupa cerca de 1,6GB |
 | **Node.js 20+** | rodar e compilar o app |
-| **Homebrew** | instalar o whisper.cpp e o ffmpeg |
+| **Homebrew** | instalar o whisper.cpp |
 | **~2GB de disco livre** | o modelo de transcrição é baixado no primeiro uso |
 
-## Instalação
+## Instalação (macOS)
 
 ```bash
 # 1. dependências de sistema
-brew install whisper-cpp ffmpeg
+# (o ffmpeg não entra aqui: vem do pacote npm ffmpeg-static, nas duas plataformas)
+brew install whisper-cpp
 
 # 2. o app
 git clone https://github.com/felipefernandees/dita-ai.git
@@ -76,10 +86,10 @@ O histórico das transcrições fica num SQLite local em `~/Library/Application 
 ## Como funciona por dentro
 
 ```
-Fn+Espaço (helper Swift, atalho global)
+Atalho global (helper Swift no macOS, dita-helper.exe no Windows)
         │
         ▼
-Electron grava o áudio  →  ffmpeg converte  →  whisper.cpp (servidor local, Metal)
+Electron grava o áudio  →  ffmpeg converte  →  whisper.cpp (servidor local)
         │
         ▼
 Texto volta, passa pelo polimento (pontuação e capitalização)
@@ -90,12 +100,16 @@ Colado no campo onde o cursor está
 
 Tudo acontece na sua máquina. O único acesso à internet do projeto é o download do modelo, uma vez.
 
+O whisper roda em Metal no macOS e em CPU (com OpenBLAS) no Windows — o
+whisper.cpp não publica build de GPU para Windows fora de placas NVIDIA.
+
 | Pasta | O que tem |
 |---|---|
 | `app/` | o Electron: `src/main` (processo principal, whisper, hotkeys, banco) e `src/renderer` (popup e preferências em React) |
-| `helper/` | `DitaHotkeys.swift`, o binário que escuta o atalho global |
+| `helper/` | `DitaHotkeys.swift`, o binário que escuta o atalho global no macOS |
+| `helper-win/` | `dita-helper.exe`, o equivalente Windows: hook de teclado, colagem e app em foco |
 | `branding/` | ícones e identidade visual |
-| `docs/` | a spec de design e o plano da Fase 1 |
+| `docs/` | a spec de design, o plano da Fase 1 e o [guia do Windows](docs/windows.md) |
 
 ## Estado do projeto
 
