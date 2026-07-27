@@ -23,7 +23,7 @@ export function createTray({ getLast, onPasteLast, onOpenSettings = () => {}, on
 
   function buildMenu(lastText) {
     return Menu.buildFromTemplate([
-      { label: 'Paste last transcript', accelerator: isMac ? 'Ctrl+Cmd+V' : 'Ctrl+Alt+V', click: onPasteLast },
+      { label: 'Colar último ditado', accelerator: isMac ? 'Ctrl+Cmd+V' : 'Ctrl+Alt+V', click: onPasteLast },
       { label: truncate(lastText), enabled: false },
       { type: 'separator' },
       { label: 'Abrir Dita Aí', click: onOpenSettings },

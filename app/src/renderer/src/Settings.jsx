@@ -133,14 +133,14 @@ function Config({ settings, mics, update }) {
         <div style={{ ...S.row, ...S.divider }}>
           <div>
             <div style={S.label}>Iniciar aplicativo no login</div>
-            <div style={S.sub}>O Dita Aí abre sozinho quando você liga o Mac</div>
+            <div style={S.sub}>O Dita Aí abre sozinho quando você liga o computador</div>
           </div>
           <Toggle checked={settings.openAtLogin !== 'false'} onChange={(v) => update('openAtLogin', String(v))} />
         </div>
       </div>
 
       <div style={{ fontSize: 12, color: C.muted, fontFamily: MONO, letterSpacing: '.04em' }}>
-        DITA AÍ v0.3 · 100% LOCAL · O ÁUDIO NUNCA SAI DO SEU MAC
+        DITA AÍ v0.3 · 100% LOCAL · O ÁUDIO NUNCA SAI DA SUA MÁQUINA
       </div>
     </>
   )
