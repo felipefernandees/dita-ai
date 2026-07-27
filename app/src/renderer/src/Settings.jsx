@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { ATALHOS } from './atalhos'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ATALHOS, specDeEvento, rotuloToggle, avisoToggle } from './atalhos'
 
 // Paleta neutra clonada do Wispr Flow: near-black e branco, zero cor saturada
 const C = {
@@ -11,7 +11,11 @@ const C = {
   text: '#f5f5f7',      // texto primário
   muted: '#8e8e93',     // texto muted
   accent: '#f5f5f7',    // destaque = o próprio branco
-  ink: '#131315'        // texto sobre o branco
+  ink: '#131315',       // texto sobre o branco
+  // Única cor da paleta. Recusar um atalho precisa LER como recusa, e num
+  // esquema todo cinza a mensagem some no meio dos textos de apoio; o vermelho
+  // é dessaturado ao máximo que ainda dá para reconhecer.
+  alerta: '#e0a3a3'
 }
 const FONT = "'General Sans', ui-sans-serif, system-ui, sans-serif"
 const MONO = "ui-monospace, 'SF Mono', Menlo, monospace"
@@ -36,7 +40,21 @@ const S = {
   label: { fontSize: 14, fontWeight: 600 },
   sub: { fontSize: 12, color: C.muted, marginTop: 3, lineHeight: 1.5 },
   select: { padding: '7px 10px', borderRadius: 10, border: `1px solid ${C.border}`, background: C.hover, color: C.text, fontSize: 13, maxWidth: 230, fontFamily: FONT },
-  kbd: { background: C.hover, border: `1px solid ${C.border}`, borderRadius: 6, padding: '2px 7px', fontSize: 12, color: C.text, fontFamily: MONO }
+  kbd: { background: C.hover, border: `1px solid ${C.border}`, borderRadius: 6, padding: '2px 7px', fontSize: 12, color: C.text, fontFamily: MONO },
+  // coluna da direita das linhas de atalho: o controle em cima, a explicação
+  // embaixo — mensagens de recusa são frases inteiras e não cabem numa linha
+  controle: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flexShrink: 0 },
+  captura: (ativo) => ({
+    padding: '7px 13px', borderRadius: 10, minWidth: 196, textAlign: 'center', cursor: 'pointer',
+    border: `1px solid ${ativo ? C.accent : C.border}`, background: C.hover,
+    color: ativo ? C.muted : C.text, fontSize: 13, fontFamily: MONO
+  }),
+  pill: (ativo) => ({
+    padding: '6px 11px', borderRadius: 999, cursor: 'pointer', fontSize: 12.5, fontWeight: 600, fontFamily: FONT,
+    border: `1px solid ${ativo ? C.accent : C.border}`,
+    background: ativo ? C.accent : C.hover, color: ativo ? C.ink : C.muted
+  }),
+  nota: (cor) => ({ fontSize: 12, color: cor, marginTop: 7, lineHeight: 1.45, maxWidth: 262, textAlign: 'right' })
 }
 
 // Equalizador de 5 barras (símbolo da marca). Coordenadas copiadas do ícone
@@ -74,6 +92,101 @@ function Toggle({ checked, onChange }) {
 }
 
 
+// Captura de atalho: o botão mostra a combinação atual e, clicado, escuta o
+// próximo keydown. Grava quando chega uma tecla não-modificadora; Esc puro
+// cancela.
+//
+// O listener é global e em fase de CAPTURA (o `true` no addEventListener), com
+// preventDefault: enquanto o modo está ligado, nada mais na janela pode reagir
+// ao teclado. Sem isso, gravar "Ctrl+A" selecionaria o texto da tela junto, e
+// gravar "Tab" moveria o foco para fora do próprio botão.
+function CapturaAtalho({ valor, onSave }) {
+  const [capturando, setCapturando] = useState(false)
+  const [erro, setErro] = useState(null)
+  const botao = useRef(null)
+
+  useEffect(() => {
+    if (!capturando) return
+
+    function onKeyDown(e) {
+      e.preventDefault()
+      e.stopPropagation()
+
+      // Esc SOZINHO cancela. Com modificador (ctrl+esc) é combinação legítima,
+      // então não pode ser sequestrado pelo cancelamento.
+      if (e.code === 'Escape' && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
+        setCapturando(false)
+        setErro(null)
+        return
+      }
+
+      const r = specDeEvento(e)
+      // Só modificadores segurados: o usuário está no meio da combinação.
+      if (r.pendente) { setErro(null); return }
+      // Recusa NÃO sai do modo de captura: o usuário acabou de descobrir a
+      // regra e a próxima coisa que ele quer fazer é tentar outra tecla.
+      if (!r.ok) { setErro(r.mensagem); return }
+
+      setCapturando(false)
+      setErro(null)
+      onSave(r.spec)
+    }
+
+    // Sair do modo por qualquer caminho que não seja o teclado. Enquanto ele
+    // está ligado a janela inteira fica surda — sem estas duas saídas, um
+    // clique fora ou um alt-tab deixariam o usuário sem conseguir digitar nem
+    // na busca do histórico, e sem pista do porquê.
+    function sair() { setCapturando(false); setErro(null) }
+    function onMouseDown(e) { if (!botao.current?.contains(e.target)) sair() }
+
+    window.addEventListener('keydown', onKeyDown, true)
+    window.addEventListener('mousedown', onMouseDown, true)
+    window.addEventListener('blur', sair)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true)
+      window.removeEventListener('mousedown', onMouseDown, true)
+      window.removeEventListener('blur', sair)
+    }
+  }, [capturando, onSave])
+
+  const aviso = capturando || erro ? null : avisoToggle(valor)
+
+  return (
+    <div style={S.controle}>
+      <button
+        ref={botao}
+        type="button"
+        onClick={() => { setErro(null); setCapturando(!capturando) }}
+        style={S.captura(capturando)}
+      >
+        {capturando ? 'Pressione a combinação…' : rotuloToggle(valor)}
+      </button>
+      {capturando && !erro && <div style={S.nota(C.muted)}>Esc cancela</div>}
+      {erro && <div style={S.nota(C.alerta)}>{erro}</div>}
+      {aviso && <div style={S.nota(C.muted)}>{aviso}</div>}
+    </div>
+  )
+}
+
+// Push-to-talk continua sendo uma lista, não uma captura: é sempre UM
+// modificador segurado, e um controle de captura prometeria combinações que o
+// helper não sabe (nem deveria) escutar.
+function EscolhaPtt({ opcoes, valor, onSave }) {
+  const aviso = opcoes.find(([v]) => v === valor)?.[2]
+  return (
+    <div style={S.controle}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end', maxWidth: 262 }}>
+        {opcoes.map(([v, rotulo]) => (
+          <button key={v} type="button" aria-pressed={v === valor} onClick={() => onSave(v)} style={S.pill(v === valor)}>
+            {rotulo}
+          </button>
+        ))}
+      </div>
+      {aviso && <div style={S.nota(C.muted)}>{aviso}</div>}
+    </div>
+  )
+}
+
 function Config({ settings, mics, update }) {
   const atalhos = ATALHOS[settings.platform] || ATALHOS.darwin
   return (
@@ -85,20 +198,33 @@ function Config({ settings, mics, update }) {
         <div style={S.row}>
           <div>
             <div style={S.label}>Atalho principal (liga e desliga)</div>
-            <div style={S.sub}>Aperta uma vez pra gravar, de novo pra transcrever</div>
+            <div style={S.sub}>
+              {atalhos.capturaToggle
+                ? 'Clique e aperte a combinação que você quiser'
+                : 'Aperta uma vez pra gravar, de novo pra transcrever'}
+            </div>
           </div>
-          <select style={S.select} value={settings.toggleShortcut || atalhos.padraoToggle} onChange={(e) => update('toggleShortcut', e.target.value)}>
-            {atalhos.toggle.map(([valor, rotulo]) => <option key={valor} value={valor}>{rotulo}</option>)}
-          </select>
+          {atalhos.capturaToggle ? (
+            <CapturaAtalho
+              valor={settings.toggleShortcut || atalhos.padraoToggle}
+              onSave={(spec) => update('toggleShortcut', spec)}
+            />
+          ) : (
+            <select style={S.select} value={settings.toggleShortcut || atalhos.padraoToggle} onChange={(e) => update('toggleShortcut', e.target.value)}>
+              {atalhos.toggle.map(([valor, rotulo]) => <option key={valor} value={valor}>{rotulo}</option>)}
+            </select>
+          )}
         </div>
         <div style={{ ...S.row, ...S.divider }}>
           <div>
             <div style={S.label}>Push-to-talk (segurar pra falar)</div>
             <div style={S.sub}>Grava enquanto a tecla está pressionada</div>
           </div>
-          <select style={S.select} value={settings.pttShortcut || atalhos.padraoPtt} onChange={(e) => update('pttShortcut', e.target.value)}>
-            {atalhos.ptt.map(([valor, rotulo]) => <option key={valor} value={valor}>{rotulo}</option>)}
-          </select>
+          <EscolhaPtt
+            opcoes={atalhos.ptt}
+            valor={settings.pttShortcut || atalhos.padraoPtt}
+            onSave={(v) => update('pttShortcut', v)}
+          />
         </div>
         <div style={{ ...S.row, ...S.divider }}>
           <div style={S.sub}>

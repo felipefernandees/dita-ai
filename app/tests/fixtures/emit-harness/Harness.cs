@@ -42,6 +42,24 @@ internal static class Harness
     {
         foreach (var entrada in specs)
         {
+            // Despeja o vocabulário inteiro do helper. É o outro lado da
+            // comparação: sem isto o teste só provaria que o C# aceita o que o
+            // JS conhece, e uma tecla que só o C# conhece passaria batida.
+            if (entrada == "@tokens")
+            {
+                Console.Out.WriteLine(
+                    "{\"kind\":\"tokens\",\"base\":[" +
+                    string.Join(",", Teclas.Base.Keys.Select(Str)) +
+                    "],\"ptt\":[" +
+                    string.Join(",", PttSpec.Tabela.Keys.Select(Str)) +
+                    "],\"reservadas\":[" +
+                    string.Join(",", Teclas.Reservadas.Select(Str)) +
+                    "],\"modificadores\":[" +
+                    string.Join(",", Teclas.Modificadores.Select(Str)) +
+                    "]}");
+                continue;
+            }
+
             int sep = entrada.IndexOf(':');
             string tipo = sep < 0 ? "toggle" : entrada[..sep];
             string spec = sep < 0 ? entrada : entrada[(sep + 1)..];

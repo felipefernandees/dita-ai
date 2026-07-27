@@ -4,6 +4,7 @@ import { mkdirSync, existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import { TECLAS_BASE, MODIFICADORES, RESERVADAS, ATALHOS, validarToggle } from '../src/renderer/src/atalhos.js'
 
 // Um hook WH_KEYBOARD_LL tem orçamento de LowLevelHooksTimeout (~300ms) por
 // chamada; estourou, o Windows desregistra o hook em silêncio e os atalhos do
@@ -113,7 +114,7 @@ describe.skipIf(!hasDotnet)('ShortcutSpec: vocabulário de atalhos', () => {
     const linhas = run.stdout.trim().split('\n').map((l) => JSON.parse(l))
     expect(linhas.length).toBe(specs.length)
     const porSpec = new Map()
-    for (const l of linhas) porSpec.set(`${l.kind}:${l.spec}`, l)
+    for (const l of linhas) porSpec.set(l.kind === 'tokens' ? 'tokens' : `${l.kind}:${l.spec}`, l)
     return porSpec
   }
 
@@ -188,11 +189,19 @@ describe.skipIf(!hasDotnet)('ShortcutSpec: vocabulário de atalhos', () => {
   // rctrl, não ficar com push-to-talk morto.
   const PTT_INVALIDOS = ['rwin', 'lwin', 'rcmd', 'ropt', 'ctrl+shift', '']
 
+  // Toda tecla base que o renderer conhece, atrás de um Ctrl (que é o mínimo
+  // para a base comum passar da regra 1). Se o JS oferecer uma tecla que o
+  // helper não sabe parsear, o usuário grava um atalho que nunca dispara.
+  const TOKENS_JS = [...new Set(Object.values(TECLAS_BASE))]
+  const COBERTURA = TOKENS_JS.map((t) => `toggle:ctrl+${t}`)
+
   const TODOS = [
+    '@tokens',
     ...VALIDOS.map(([s]) => `toggle:${s}`),
     ...INVALIDOS.map(([s]) => `toggle:${s}`),
     'toggle:CTRL+Shift+Space',
     'toggle:shift+ctrl+space',
+    ...COBERTURA,
     ...PTT.map(([s]) => `ptt:${s}`),
     ...PTT_INVALIDOS.map((s) => `ptt:${s}`)
   ]
@@ -246,5 +255,51 @@ describe.skipIf(!hasDotnet)('ShortcutSpec: vocabulário de atalhos', () => {
     const r = R.get(`ptt:${spec}`)
     expect(r.ok).toBe(false)
     expect(r.vk).toBe(VK_RCONTROL)
+  })
+
+  // --- o guarda de deriva entre as duas linguagens -------------------------
+  //
+  // Acima o teste verifica o helper contra expectativas escritas à mão. Aqui
+  // ele verifica o helper contra o RENDERER: os dois têm cópias independentes
+  // do vocabulário, e uma divergência não dá erro em lugar nenhum — a UI grava
+  // um spec, o helper cai no default, e o atalho simplesmente não pega.
+
+  it('conhece exatamente as mesmas teclas base que o renderer', () => {
+    const doHelper = R.get('tokens').base
+    expect([...doHelper].sort()).toEqual([...TOKENS_JS].sort())
+  })
+
+  it('conhece exatamente os mesmos modificadores, reservadas e teclas de PTT', () => {
+    const t = R.get('tokens')
+    expect(t.modificadores).toEqual(MODIFICADORES)
+    expect([...t.reservadas].sort()).toEqual([...RESERVADAS].sort())
+    expect([...t.ptt].sort()).toEqual(ATALHOS.win32.ptt.map(([v]) => v).sort())
+  })
+
+  it('aceita ctrl+<tecla> para toda tecla que o renderer oferece', () => {
+    for (const token of TOKENS_JS) {
+      const r = R.get(`toggle:ctrl+${token}`)
+      expect(r.ok, `o helper recusou ctrl+${token} (${r.motivo})`).toBe(true)
+      expect(r.canon).toBe(`ctrl+${token}`)
+    }
+  })
+
+  it('dá o mesmo veredicto que o validador do renderer em todos os specs', () => {
+    const casos = [
+      ...VALIDOS.map(([s]) => s),
+      ...INVALIDOS.map(([s]) => s),
+      'CTRL+Shift+Space', 'shift+ctrl+space',
+      ...TOKENS_JS.map((t) => `ctrl+${t}`)
+    ]
+    for (const spec of casos) {
+      const cs = R.get(`toggle:${spec}`)
+      const js = validarToggle(spec)
+      expect(js.ok, `divergência de veredicto em "${spec}"`).toBe(cs.ok)
+      // O motivo também: é ele que vira a frase em português para o usuário.
+      // Um motivo diferente do lado do helper significa que a UI explicaria a
+      // recusa errada.
+      if (!cs.ok) expect(js.motivo, `motivo divergente em "${spec}"`).toBe(cs.motivo)
+      else expect(js.spec, `canônico divergente em "${spec}"`).toBe(cs.canon)
+    }
   })
 })

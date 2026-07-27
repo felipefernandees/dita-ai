@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
+import { ATALHOS, validarToggle } from '../src/renderer/src/atalhos.js'
 
 // Assim como em paths.test.js, o módulo calcula seus valores em tempo de
 // import a partir de process.platform. Só trocar process.platform depois do
@@ -21,32 +22,13 @@ async function loadDefaultsFor(platform) {
 
 describe('defaults de atalho', () => {
   it('nunca oferece fn no Windows: Fn não chega ao hook de teclado', async () => {
-    const { DEFAULT_TOGGLE, TOGGLE_OPTIONS } = await loadDefaultsFor('win32')
+    const { DEFAULT_TOGGLE } = await loadDefaultsFor('win32')
     expect(DEFAULT_TOGGLE).not.toContain('fn')
-    expect(TOGGLE_OPTIONS).not.toContain('fn+space')
   })
 
   it('nunca usa right alt como PTT no Windows: AltGr no teclado ABNT2', async () => {
     const { DEFAULT_PTT } = await loadDefaultsFor('win32')
     expect(DEFAULT_PTT).not.toBe('ralt')
-  })
-
-  // Um toque solto no Windows direito abre o menu Iniciar, e teclas de PTT
-  // nunca são suprimidas — então rwin não funciona como push-to-talk. A lista
-  // é contrato com o helper C#, por isso a comparação é exata e ordenada: um
-  // valor a mais aqui vira um --ptt=<algo> que o helper precisa saber parsear.
-  it('não oferece rwin como PTT no Windows: abre o menu Iniciar', async () => {
-    const { PTT_OPTIONS } = await loadDefaultsFor('win32')
-    expect([...PTT_OPTIONS]).toEqual(['rctrl', 'rshift', 'ralt'])
-    expect(PTT_OPTIONS).not.toContain('rwin')
-  })
-
-  it('o default sempre está entre as opções oferecidas, no Windows e no macOS', async () => {
-    for (const platform of ['win32', 'darwin']) {
-      const { DEFAULT_TOGGLE, DEFAULT_PTT, TOGGLE_OPTIONS, PTT_OPTIONS } = await loadDefaultsFor(platform)
-      expect(TOGGLE_OPTIONS).toContain(DEFAULT_TOGGLE)
-      expect(PTT_OPTIONS).toContain(DEFAULT_PTT)
-    }
   })
 
   it('mantém fn+space e rcmd como default no macOS', async () => {
@@ -55,15 +37,28 @@ describe('defaults de atalho', () => {
     expect(DEFAULT_PTT).toBe('rcmd')
   })
 
-  // As listas são singletons de módulo. Um `.sort()` sem cópia no <select> das
-  // Preferências corromperia a ordem para o processo inteiro.
-  it('as listas de opções são imutáveis', async () => {
-    const { TOGGLE_OPTIONS, PTT_OPTIONS } = await loadDefaultsFor('win32')
-    for (const lista of [TOGGLE_OPTIONS, PTT_OPTIONS]) {
-      const antes = [...lista]
-      expect(() => lista.push('invadido')).toThrow(TypeError)
-      expect(() => lista.reverse()).toThrow(TypeError)
-      expect([...lista]).toEqual(antes)
-    }
+  // TOGGLE_OPTIONS/PTT_OPTIONS saíram do defaults.js: no Windows o atalho
+  // principal virou uma gramática, não uma lista, e o que sobrou de lista é
+  // apresentação (com rótulo em português) e mora no atalhos.js do renderer.
+  // O que continua sendo contrato aqui são os DEFAULTS — o index.js os passa
+  // direto para a linha de comando do helper.
+  it('não reintroduz listas de opções no processo main', async () => {
+    const mod = await loadDefaultsFor('win32')
+    expect(Object.keys(mod).sort()).toEqual(['DEFAULT_PTT', 'DEFAULT_TOGGLE'])
+  })
+
+  // O caminho do default é o único que roda sem o usuário ter escolhido nada:
+  // se ele não passar pelo parser, TODO usuário novo cai no fallback interno do
+  // helper — que hoje coincide, mas coincidência não é contrato.
+  it('o default do Windows é um spec válido pela gramática do helper', async () => {
+    const { DEFAULT_TOGGLE, DEFAULT_PTT } = await loadDefaultsFor('win32')
+    expect(validarToggle(DEFAULT_TOGGLE)).toEqual({ ok: true, spec: DEFAULT_TOGGLE })
+    expect(ATALHOS.win32.ptt.map(([v]) => v)).toContain(DEFAULT_PTT)
+  })
+
+  it('o default do macOS está entre as opções que a UI oferece lá', async () => {
+    const { DEFAULT_TOGGLE, DEFAULT_PTT } = await loadDefaultsFor('darwin')
+    expect(ATALHOS.darwin.toggle.map(([v]) => v)).toContain(DEFAULT_TOGGLE)
+    expect(ATALHOS.darwin.ptt.map(([v]) => v)).toContain(DEFAULT_PTT)
   })
 })
