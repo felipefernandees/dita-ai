@@ -25,8 +25,60 @@ internal static class Harness
     {
         "drain" => Drain(),
         "altgr" => AltGr(),
+        "parse" => ParseSpecs(args.Skip(1).ToArray()),
         _ => NonBlocking()
     };
+
+    // Cenário 4: o vocabulário de atalhos. O formato dos specs é contrato de
+    // fio entre o renderer (atalhos.js monta a string) e o helper (ShortcutSpec
+    // faz o parse), e nada além deste cenário percebe se os dois divergirem —
+    // uma string que a UI grava e o helper recusa vira um atalho que
+    // silenciosamente volta ao default, sem erro em lugar nenhum.
+    //
+    // Recebe os specs como argumentos ("toggle:ctrl+space", "ptt:rshift") para
+    // que a LISTA viva no teste em JS, ao lado das expectativas, em vez de
+    // ficar duplicada aqui. Imprime uma linha JSON por spec, na ordem recebida.
+    private static int ParseSpecs(string[] specs)
+    {
+        foreach (var entrada in specs)
+        {
+            int sep = entrada.IndexOf(':');
+            string tipo = sep < 0 ? "toggle" : entrada[..sep];
+            string spec = sep < 0 ? entrada : entrada[(sep + 1)..];
+
+            if (tipo == "ptt")
+            {
+                // ok=false + o vk do fallback: o teste precisa distinguir
+                // "parseou como rctrl" de "caiu no rctrl porque era inválido".
+                bool ok = PttSpec.TryParse(spec, out int vk);
+                Console.Out.WriteLine(
+                    "{\"kind\":\"ptt\",\"spec\":" + Str(spec) +
+                    ",\"ok\":" + Bool(ok) +
+                    ",\"vk\":" + PttSpec.Parse(spec) + "}");
+                continue;
+            }
+
+            bool okT = ToggleSpec.TryParse(spec, out var parsed, out var motivo);
+            var efetivo = okT ? parsed! : ToggleSpec.Parse(spec);
+            Console.Out.WriteLine(
+                "{\"kind\":\"toggle\",\"spec\":" + Str(spec) +
+                ",\"ok\":" + Bool(okT) +
+                ",\"motivo\":" + Str(motivo.ToString()) +
+                ",\"vk\":" + efetivo.Vk +
+                ",\"ctrl\":" + Bool(efetivo.Ctrl) +
+                ",\"alt\":" + Bool(efetivo.Alt) +
+                ",\"shift\":" + Bool(efetivo.Shift) +
+                ",\"win\":" + Bool(efetivo.Win) +
+                ",\"canon\":" + Str(efetivo.Serializar()) + "}");
+        }
+        Console.Out.Flush();
+        return 0;
+    }
+
+    private static string Bool(bool b) => b ? "true" : "false";
+
+    private static string Str(string s) =>
+        "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
 
     private static FieldInfo Campo(string name) =>
         typeof(HotkeysCommand).GetField(name, BindingFlags.NonPublic | BindingFlags.Static)!;

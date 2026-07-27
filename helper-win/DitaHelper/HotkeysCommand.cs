@@ -30,8 +30,8 @@ internal static class HotkeysCommand
     private static readonly BlockingCollection<string> _queue = new();
     private static Thread? _writer;
 
-    private static ToggleSpec _toggle = ToggleSpec.Parse("ctrl+shift+space");
-    private static int _pttVk = Native.VK_RCONTROL;
+    private static ToggleSpec _toggle = ToggleSpec.Parse(ToggleSpec.Padrao);
+    private static int _pttVk = PttSpec.Parse(PttSpec.Padrao);
 
     private static volatile bool _recording; // escrito pela thread do stdin
     private static bool _toggleHeld;         // anti auto-repeat
@@ -146,6 +146,10 @@ internal static class HotkeysCommand
 
         if (isDown)
         {
+            // A base do toggle nunca é um modificador (o ToggleSpec.TryParse
+            // recusa), e o PTT é sempre um — então este ramo e o do PTT acima
+            // não podem disputar a mesma tecla, por mais exótico que seja o
+            // atalho que o usuário gravar.
             if (_toggle.Matches(vk))
             {
                 // segurar a tecla não deve disparar vários toggles
@@ -176,7 +180,9 @@ internal static class HotkeysCommand
         {
             // o keydown foi suprimido; suprimir o keyup solto evita que o app
             // em foco veja metade da combinação. Os modificadores já podem ter
-            // sido soltos, então comparamos só a tecla base.
+            // sido soltos, então comparamos só a tecla base — o que continua
+            // correto com bases arbitrárias, porque _toggleHeld só é verdadeiro
+            // depois de um Matches() completo (base + modificadores exatos).
             _toggleHeld = false;
             return (IntPtr)1;
         }
