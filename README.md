@@ -4,16 +4,18 @@
 
 É um clone funcional do Wispr Flow, feito em Electron + whisper.cpp, com transcrição em português.
 
+> No Windows existe também um **motor de transcrição remoto opcional** (Gemini Live, com a sua própria chave gratuita): ele responde em ~440ms em vez de 7 a 10s, mas **envia o seu áudio para o Google**. Vem desligado, o padrão continua sendo o motor local, e dá pra voltar a qualquer momento. Detalhes em [docs/windows.md](docs/windows.md#motor-tempo-real-gemini).
+
 > **Aviso honesto:** este é um projeto de uso interno que abrimos pra comunidade. Ele funciona, mas não é um app de loja: você vai compilar na sua máquina, o app não é assinado, e você precisa liberar permissão no sistema. Se você mexe com terminal, leva 15 minutos. Se nunca abriu um terminal, chame alguém que já abriu.
 
 ---
 
 ## Escolha sua plataforma
 
-| Sistema | Atalho padrão | Guia |
+| Sistema | Atalho | Guia |
 |---|---|---|
-| **macOS** (Apple Silicon) | `Fn+Espaço` | continue lendo abaixo |
-| **Windows 10/11** x64 | `Ctrl+Shift+Espaço` | **[docs/windows.md](docs/windows.md)** |
+| **macOS** (Apple Silicon) | `Fn+Espaço`, escolhido numa lista fixa | continue lendo abaixo |
+| **Windows 10/11** x64 | `Ctrl+Shift+Espaço` por padrão, mas você grava a combinação que quiser | **[docs/windows.md](docs/windows.md)** |
 
 ---
 
@@ -73,6 +75,8 @@ Se você não confia em rodar binário não assinado (postura correta), compile 
 
 O Whisper acerta muito mais quando sabe de antemão que palavras você costuma falar. Abra `app/src/main/whisper.js`, ache a constante `VOCABULARIO` e coloque ali os seus nomes próprios: sua empresa, seus sócios, as ferramentas do seu stack, sua cidade. É o ajuste com melhor retorno do projeto inteiro.
 
+Existe ainda um **dicionário de correção** aplicado depois da transcrição (em `polish()`), que é o que conserta jargão de dev — `git hub` → `GitHub`, `deploi` → `deploy`. Ele vale para os dois motores de transcrição, mas **ainda não tem interface**: hoje se edita no SQLite ou na semeadura em `app/src/main/db.js`.
+
 ## Como usar
 
 | Ação | Atalho |
@@ -92,16 +96,20 @@ Atalho global (helper Swift no macOS, dita-helper.exe no Windows)
 Electron grava o áudio  →  ffmpeg converte  →  whisper.cpp (servidor local)
         │
         ▼
-Texto volta, passa pelo polimento (pontuação e capitalização)
+Texto volta, passa pelo polimento (pontuação, capitalização e dicionário)
         │
         ▼
 Colado no campo onde o cursor está
 ```
 
-Tudo acontece na sua máquina. O único acesso à internet do projeto é o download do modelo, uma vez.
+Tudo acontece na sua máquina. O único acesso à internet do projeto é o download do modelo, uma vez — a exceção é o motor remoto opcional do Windows, que é opt-in e está descrito no guia daquela plataforma.
 
-O whisper roda em Metal no macOS e em CPU (com OpenBLAS) no Windows — o
-whisper.cpp não publica build de GPU para Windows fora de placas NVIDIA.
+O whisper roda em Metal no macOS. No Windows ele roda em CPU com OpenBLAS por
+padrão, porque o whisper.cpp não publica build de GPU para Windows fora de
+placas NVIDIA; quem quiser aceleração pode compilar um binário Vulkan com
+`npm run whisper:vulkan` (opcional — sem ele nada quebra). Numa Radeon
+integrada, com uma amostra de 11,4s, isso mediu 8,3s contra 16,9s do BLAS. É uma
+máquina e um áudio só: trate como indicação, não como benchmark.
 
 | Pasta | O que tem |
 |---|---|
@@ -109,7 +117,7 @@ whisper.cpp não publica build de GPU para Windows fora de placas NVIDIA.
 | `helper/` | `DitaHotkeys.swift`, o binário que escuta o atalho global no macOS |
 | `helper-win/` | `dita-helper.exe`, o equivalente Windows: hook de teclado, colagem e app em foco |
 | `branding/` | ícones e identidade visual |
-| `docs/` | a spec de design, o plano da Fase 1 e o [guia do Windows](docs/windows.md) |
+| `docs/` | a spec de design, o plano da Fase 1, o [guia do Windows](docs/windows.md) e os roteiros de verificação manual |
 
 ## Estado do projeto
 

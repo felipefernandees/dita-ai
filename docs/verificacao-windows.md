@@ -1,6 +1,7 @@
 # Verificação manual do port Windows
 
-O que os testes automatizados **não** alcançam. Leva ~5 minutos.
+O que os testes automatizados **não** alcançam. Leva ~5 minutos, mais uns 3 se
+você for verificar o motor remoto (opcional).
 
 Por que não dá para automatizar: teclas sintetizadas por software chegam ao hook
 marcadas como injetadas, e o hook as ignora de propósito (é o que impede a
@@ -41,6 +42,40 @@ arquivo novo e vazio — não um documento seu.
 | 17 | Trocar para `Ctrl+Alt+Ç` (tecla à direita do L) e testar | grava normal; o rótulo mostra `Ctrl + Alt + Ç` | tecla OEM do ABNT2 |
 | 18 | Preferências → push-to-talk → `Shift direito`, testar | o passo 3 passa a funcionar com `Shift direito` | |
 
+## Motor Tempo Real (Gemini)
+
+Opcional — pule se você só usa o motor local. Os passos 19 e 20 precisam ser
+feitos **antes** de salvar qualquer chave, senão você não vê o fallback.
+
+Tenha uma chave gratuita em mãos (`aistudio.google.com` → Get API key → Create
+API key). A chave nunca é mostrada de volta pela interface depois de salva.
+
+| # | Ação | Esperado | Se falhar |
+|---|---|---|---|
+| 19 | Preferências → Motor de transcrição → **Modo Tempo Real** (sem chave salva) | a opção fica marcada, o aviso de que o áudio vai para o Google aparece na descrição, e o formulário de chave se abre | |
+| 20 | Ditar normalmente ainda sem chave | **notificação** dizendo que nenhuma chave foi salva, e o ditado é transcrito pelo motor local do mesmo jeito — o texto é colado | fallback do motor |
+| 21 | Colar a chave e clicar em **Salvar e Ativar** | "Chave salva e cifrada pelo cofre do sistema"; o campo **não** volta preenchido | `safeStorage` indisponível: nesse caso o aviso de texto puro é o comportamento esperado, não um erro |
+| 22 | Aparece a **barra "Uso diário estimado"** | mostra `n / 1500` e o percentual, com o texto dizendo que a contagem é local a esta máquina | |
+| 23 | Ditar uma frase e cronometrar | o texto chega logo depois de você parar de falar (na medição de referência, ~440ms), não em 7 a 10s | ver `npm run diag:gemini` |
+| 24 | Voltar às Preferências | o contador da barra subiu em 1 | contabilização de uso |
+| 25 | Rodapé das Preferências | com o Modo Tempo Real ativo lê **"O ÁUDIO É ENVIADO AO GOOGLE"**; ao voltar para o Modo Padrão volta a ler "100% LOCAL" | |
+| 26 | Remover a chave e ditar | notificação de chave ausente e transcrição local, como no passo 20 | |
+
+Se o passo 23 falhar com a sessão fechando logo depois de conectar, o id do
+modelo provavelmente foi aposentado. Rode `npm run diag:gemini` e veja
+"Quando parar de funcionar" em [windows.md](windows.md#motor-tempo-real-gemini).
+
+## Se você compilou o build Vulkan
+
+Só para quem rodou `npm run whisper:vulkan` — o build é opcional.
+
+| # | Ação | Esperado |
+|---|---|---|
+| 27 | Ditar com o motor local e olhar o log do app na subida | o candidato `vulkan` é sondado; numa máquina com GPU compatível ele é escolhido, numa sem ele é descartado em favor do `blas` |
+| 28 | Comparar o tempo com o do `blas` | mais rápido na máquina com GPU; **igual ou pior** sem GPU — é exatamente por isso que existe a sonda |
+
+## Sobre as combinações reservadas
+
 Não tente gravar `Alt+F4`, `Alt+Tab`, `Ctrl+Alt+Del` ou `Win+L` para ver a
 recusa: o Windows age nessas teclas antes da janela recebê-las — a janela fecha,
 o alternador aparece, a sessão bloqueia. É justamente por isso que elas são
@@ -67,9 +102,15 @@ Mesma causa acima.
 Configurações → Privacidade e segurança → Microfone → ligue "Permitir que
 aplicativos da área de trabalho acessem seu microfone".
 
-**A transcrição demora muito**
-Esperado em máquina modesta: no Windows o whisper roda em CPU. Ver a seção
-"Sobre a transcrição ser em CPU" em [windows.md](windows.md).
+**A transcrição local demora muito**
+Esperado em máquina modesta: por padrão o whisper roda em CPU no Windows. As
+saídas são compilar o build Vulkan ou trocar por um modelo menor — ver
+[Aceleração por GPU](windows.md#aceleração-por-gpu-vulkan-opcional).
+
+**O Modo Tempo Real está ligado mas o ditado continua lento**
+A sessão remota não subiu e o app caiu no motor local — deve ter aparecido uma
+notificação explicando qual dos três motivos foi (sem chave, cota estimada
+esgotada, ou falha de conexão). `npm run diag:gemini` separa os casos.
 
 ## Depois: o app empacotado
 
