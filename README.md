@@ -1,41 +1,44 @@
 # Dita Aí 🎙️
 
-**Ditado por voz no computador inteiro, rodando 100% local.** Você segura um atalho, fala, solta, e o texto cai no campo onde o cursor está: WhatsApp Web, Notion, terminal, prompt do Claude, qualquer lugar. Nada sobe pra nuvem, nada tem mensalidade.
-
-É um clone funcional do Wispr Flow, feito em Electron + whisper.cpp, com transcrição em português.
+**Você aperta um atalho, fala, e o texto aparece onde o cursor está.** WhatsApp Web, Word, e-mail, qualquer campo. Sem mensalidade.
 
 ---
 
 # ⬇️ Baixar
 
-## Windows 10 ou 11
+## 🪟 Windows 10 / 11
 
-### **[→ BAIXAR O INSTALADOR](https://github.com/felipefernandees/dita-ai/releases/latest)**
+# **[→ BAIXAR O INSTALADOR](https://github.com/felipefernandees/dita-ai/releases/latest)**
 
-Clique no link acima, baixe o arquivo que termina em **`.exe`** e execute. **Não precisa de terminal, não precisa instalar mais nada, não precisa compilar.**
+## 🍎 macOS
 
-Depois de instalar, o atalho padrão é `Ctrl+Shift+Espaço` — e você pode trocar por outro nas Configurações.
-
-**Duas coisas que vão acontecer, e são normais:**
-
-1. **O Windows vai avisar que não conhece o programa** (uma tela azul, "O Windows protegeu o computador"). Clique em **"Mais informações"** e depois em **"Executar assim mesmo"**. Isso acontece porque o instalador não tem certificado pago de assinatura — não porque tenha algo errado com ele.
-2. **No primeiro ditado o app baixa o modelo de transcrição (~1,6 GB).** Demora, acontece uma vez só, e depois funciona sem internet.
-
-## macOS (Apple Silicon)
-
-Ainda **não** há instalador pronto para Mac. Aqui você vai compilar na sua máquina: [instruções logo abaixo](#o-que-você-precisa-macos). Se você mexe com terminal, leva 15 minutos. Se nunca abriu um terminal, chame alguém que já abriu.
+Ainda não existe instalador pronto para Mac — é preciso compilar. **[Veja como →](macOS/)**
 
 ---
 
-> ### ⚠️ O botão verde `Code` no topo desta página **não** baixa o aplicativo
->
-> Ele baixa o **código-fonte** — os arquivos de programação, que só servem para quem vai compilar. Se você só quer *usar* o Dita Aí no Windows, use o link **Baixar o instalador** acima.
+> ⚠️ O botão verde **`Code`** lá em cima **não** baixa o aplicativo. Ele baixa o código de programação. Para usar o Dita Aí, use o link acima.
+
+**No Windows, depois de baixar:**
+
+1. Execute o arquivo `.exe`.
+2. Vai aparecer **"O Windows protegeu o seu computador"** → clique em **Mais informações** → **Executar assim mesmo**. É esperado: o instalador não tem certificado pago.
+3. No primeiro ditado o app baixa o modelo de voz (**1,6 GB**). Uma vez só. Depois funciona sem internet.
+4. Aperte **`Ctrl` + `Shift` + `Espaço`**, fale, aperte de novo.
+
+Passo a passo com mais detalhe: **[Windows/](Windows/)** · **[macOS/](macOS/)**
 
 ---
 
-> No Windows existe também um **motor de transcrição remoto opcional** (Gemini Live, com a sua própria chave gratuita): ele responde em ~440ms em vez de 7 a 10s, mas **envia o seu áudio para o Google**. Vem desligado, o padrão continua sendo o motor local, e dá pra voltar a qualquer momento. Detalhes em [docs/windows.md](docs/windows.md#motor-tempo-real-gemini).
+<details>
+<summary><b>Detalhes técnicos do projeto</b> (para quem vai mexer no código)</summary>
 
-> **Aviso honesto:** este é um projeto de uso interno que abrimos pra comunidade. Ele funciona, mas não é um app de loja: o instalador não é assinado, e você precisa liberar permissão no sistema na primeira vez.
+Clone funcional do Wispr Flow, em Electron + whisper.cpp, com transcrição em português rodando **100% local** — nada sobe pra nuvem.
+
+No Windows existe também um **motor remoto opcional** (Gemini Live, com a sua própria chave gratuita): responde em ~440ms em vez de 7 a 10s, mas **envia o seu áudio para o Google**. Vem desligado, o padrão continua sendo o motor local. Detalhes em [docs/windows.md](docs/windows.md#motor-tempo-real-gemini).
+
+Projeto de uso interno aberto pra comunidade. Funciona, mas não é app de loja: o instalador não é assinado e o sistema pede permissão na primeira vez.
+
+</details>
 
 ---
 
