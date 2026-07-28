@@ -1,4 +1,4 @@
-import { spawn, execFile } from 'child_process'
+import { spawn, execFile, spawnSync } from 'child_process'
 import { writeFile, unlink, readFile, rename, access } from 'fs/promises'
 import { createWriteStream, existsSync, mkdirSync, constants as fsConstants } from 'fs'
 import { createServer } from 'net'
@@ -58,9 +58,39 @@ export async function ensureModel() {
 // 11,4s — 4 threads 22,0s | 8 threads 17,8s | 16 threads 27,3s. Passar dos
 // físicos faz os threads de SMT brigarem pelas mesmas unidades de execução e
 // fica pior que o ponto de partida.
-function threadsDeInferencia() {
-  if (process.env.DITA_THREADS) return Number(process.env.DITA_THREADS)
-  const logicos = cpus().length || 4
+//
+// `lógicos / 2` traduz "físicos" NUM PROCESSADOR COM SMT, que é a premissa do
+// x86 onde a medição acima foi feita. No Apple Silicon ela erra duas vezes: não
+// existe SMT (todo núcleo lógico é físico) e os núcleos não são iguais — um M4
+// de 10 núcleos tem 4 de performance e 6 de eficiência, e a conta devolve 5,
+// jogando parte do trabalho num E-core. Como o whisper.cpp divide o lote em
+// partes iguais entre os threads, o lote inteiro passa a esperar a fatia que
+// caiu no núcleo lento. Lá o número certo é o de núcleos de PERFORMANCE, que o
+// sistema informa em hw.perflevel0.logicalcpu.
+//
+// Mac Intel não tem perflevel: cai no caminho antigo, que é o certo para ele
+// (aquele processador tem hyper-threading de verdade).
+function nucleosDePerformance() {
+  try {
+    const r = spawnSync('sysctl', ['-n', 'hw.perflevel0.logicalcpu'], { encoding: 'utf8', timeout: 2000 })
+    const n = Number(String(r.stdout || '').trim())
+    return Number.isInteger(n) && n > 0 ? n : 0
+  } catch {
+    return 0
+  }
+}
+
+export function threadsDeInferencia({
+  plataforma = process.platform,
+  logicos = cpus().length || 4,
+  performance = plataforma === 'darwin' ? nucleosDePerformance() : 0,
+  env = process.env
+} = {}) {
+  if (env.DITA_THREADS) return Number(env.DITA_THREADS)
+  // O teto de 8 continua valendo nas duas plataformas: além disso o ganho some
+  // e a máquina fica sem CPU para o resto (o app, o navegador, a chamada em que
+  // a pessoa está ditando).
+  if (performance > 0) return Math.max(1, Math.min(8, performance))
   return Math.max(1, Math.min(8, Math.floor(logicos / 2)))
 }
 
