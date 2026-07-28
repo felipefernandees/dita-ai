@@ -30,6 +30,11 @@ mac:
       to: trayTemplate.png
     - from: resources/trayTemplate@2x.png
       to: trayTemplate@2x.png
+    # Compilado por `npm run deps:mac` (o upstream do whisper.cpp não publica
+    # binário de macOS). Sem isto o app depende do whisper-cpp do Homebrew da
+    # máquina, que é o que o fazia rodar só em um Mac: o de quem o construiu.
+    - from: resources/mac/whisper
+      to: whisper
 
 win:
   icon: build/icon.ico

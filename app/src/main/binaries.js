@@ -27,20 +27,40 @@ export function ffmpegPath() {
   return String(ffmpegStatic).replace('app.asar', 'app.asar.unpacked')
 }
 
-// Ordem de preferência. BLAS não é aceleração de GPU — é a mesma CPU fazendo
-// a álgebra de matriz via OpenBLAS, mais rápido que o build ingênuo. O
-// chamador tenta um a um porque o build BLAS depende de uma DLL de terceiro
-// (a do OpenBLAS) que pode não estar presente (release futuro parou de
-// publicar o asset `blas`) ou não carregar numa máquina específica; nesse
-// caso o build `cpu` puro, sem dependência nenhuma além do Windows, assume.
+// Onde o whisper-server empacotado mora, com e sem o app empacotado. O nome da
+// pasta de origem difere por plataforma (resources/win, resources/mac) porque
+// cada uma é produzida por um script diferente e nenhuma das duas deve viajar
+// dentro do instalador da outra; dentro do .app/instalador as duas chegam como
+// `whisper`, que é o que o electron-builder.yml declara.
+function raizEmpacotada(plataforma) {
+  return isPackaged()
+    ? join(process.resourcesPath, 'whisper')
+    : join(baseDir(), `../../resources/${plataforma}/whisper`)
+}
+
+// Ordem de preferência. No Windows, BLAS não é aceleração de GPU — é a mesma
+// CPU fazendo a álgebra de matriz via OpenBLAS, mais rápido que o build
+// ingênuo. O chamador tenta um a um porque o build BLAS depende de uma DLL de
+// terceiro (a do OpenBLAS) que pode não estar presente (release futuro parou de
+// publicar o asset `blas`) ou não carregar numa máquina específica; nesse caso
+// o build `cpu` puro, sem dependência nenhuma além do Windows, assume.
+//
+// No macOS há um candidato só (`metal`, compilado por scripts/build-whisper-mac.mjs)
+// e, atrás dele, o whisper-cpp do Homebrew. O Homebrew NÃO é fallback de
+// produção: ele existe para quem está desenvolvendo e ainda não rodou
+// `npm run deps:mac`. Foi justamente depender dele que fazia o app só funcionar
+// na máquina de quem o construiu.
 export function whisperServerCandidates() {
   if (process.env.DITA_WHISPER_SERVER) return [process.env.DITA_WHISPER_SERVER]
-  if (!isWin) return ['/opt/homebrew/opt/whisper-cpp/bin/whisper-server']
 
-  const root = isPackaged()
-    ? join(process.resourcesPath, 'whisper')
-    : join(baseDir(), '../../resources/win/whisper')
+  if (!isWin) {
+    return [
+      join(raizEmpacotada('mac'), 'metal', 'whisper-server'),
+      '/opt/homebrew/opt/whisper-cpp/bin/whisper-server'
+    ].filter((p) => existsSync(p))
+  }
 
+  const root = raizEmpacotada('win')
   return ['vulkan', 'blas', 'cpu']
     .map((flavor) => join(root, flavor, 'whisper-server.exe'))
     .filter((p) => existsSync(p))

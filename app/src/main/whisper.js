@@ -94,6 +94,15 @@ export function threadsDeInferencia({
   return Math.max(1, Math.min(8, Math.floor(logicos / 2)))
 }
 
+// A instrução muda por plataforma: no Windows os binários são BAIXADOS dos
+// releases oficiais, no macOS eles são COMPILADOS (o upstream não publica build
+// de Mac). Mandar o usuário rodar o comando da outra plataforma é o tipo de
+// mensagem de erro que faz perder meia hora.
+function semServidor() {
+  const comando = process.platform === 'win32' ? 'npm run deps:win' : 'npm run deps:mac'
+  return `nenhum whisper-server encontrado: rode \`${comando}\``
+}
+
 export async function startWhisperServer({
   binPath,
   modelPath: model = modelPath(),
@@ -101,7 +110,7 @@ export async function startWhisperServer({
   port = PORT
 } = {}) {
   const bin = binPath || whisperServerCandidates()[0]
-  if (!bin) throw new Error('nenhum whisper-server encontrado: rode `npm run deps:win`')
+  if (!bin) throw new Error(semServidor())
 
   const proc = spawn(bin, [
     '--model', model, '--host', '127.0.0.1', '--port', String(port),
@@ -202,7 +211,7 @@ function descartarVulkanInutil(candidates) {
 // de um whisper-server de verdade.
 export async function startWhisperServerWithFallback({ candidates: candidatesOverride, ...opts } = {}) {
   const candidates = descartarVulkanInutil(candidatesOverride || whisperServerCandidates())
-  if (!candidates.length) throw new Error('nenhum whisper-server encontrado: rode `npm run deps:win`')
+  if (!candidates.length) throw new Error(semServidor())
 
   const model = opts.modelPath || modelPath()
   const port = opts.port || PORT

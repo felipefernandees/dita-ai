@@ -19,6 +19,21 @@ describe('binaries', () => {
     expect(existsSync(ffmpegPath())).toBe(true)
   })
 
+  // O empacotado PRECISA vir antes do Homebrew. Se o Homebrew ganhasse, o app
+  // continuaria funcionando na máquina de quem o construiu (onde a fórmula
+  // existe) e o binário que viaja dentro do .app — o único que qualquer outra
+  // pessoa tem — nunca seria exercitado em desenvolvimento.
+  it.skipIf(process.platform !== 'darwin')('no macOS, o whisper embutido vem antes do Homebrew', () => {
+    const c = whisperServerCandidates()
+    const embutido = c.findIndex((p) => p.includes('resources/mac/whisper'))
+    const brew = c.findIndex((p) => p.includes('/opt/homebrew/'))
+    // depois de `npm run deps:mac` o embutido existe; sem ele, esta parte do
+    // contrato não tem como ser verificada e o teste diz isso em vez de passar
+    // por acidente
+    expect(embutido, 'rode `npm run deps:mac` para exercitar este contrato').toBeGreaterThanOrEqual(0)
+    if (brew >= 0) expect(embutido).toBeLessThan(brew)
+  })
+
   it('devolve os candidatos de whisper-server na ordem certa', () => {
     const c = whisperServerCandidates()
     expect(Array.isArray(c)).toBe(true)

@@ -133,13 +133,27 @@ jobs:
       - name: npm ci (postinstall reconstrói o better-sqlite3 p/ o Electron)
         run: npm ci
 
-      # O helper Swift não é usado por nenhum teste (helper-path.test.js só
-      # compara strings de caminho), mas é metade do lado macOS do projeto e
-      # `npm run build:mac` o exige em extraResources. Compilar aqui é o que
-      # transforma "alguém mexeu no DitaHotkeys.swift" em vermelho.
+      # O helper Swift é usado por um teste: helper-mac.parse.test.js roda o
+      # modo `parse` do binário de verdade e compara, veredicto a veredicto,
+      # com o espelho em JS da gramática de atalhos. Sem este passo o teste se
+      # auto-pula e a divergência entre os dois parsers volta a ser invisível.
       - name: Compilar o helper Swift (dita-hotkeys)
         working-directory: helper
         run: bash build.sh
+
+      # O whisper.cpp do macOS é COMPILADO (o upstream não publica binário de
+      # Mac). São alguns minutos, então o resultado é cacheado pela tag — que é
+      # fixa dentro do script, e é ela que decide o conteúdo.
+      - name: Cache do whisper-server compilado
+        id: cache-whisper-mac
+        uses: actions/cache@v4
+        with:
+          path: app/resources/mac/whisper
+          key: whisper-mac-v1.9.1-${{ runner.os }}-${{ hashFiles('app/scripts/build-whisper-mac.mjs') }}
+
+      - name: Compilar o whisper.cpp (Metal)
+        if: steps.cache-whisper-mac.outputs.cache-hit != 'true'
+        run: npm run deps:mac
 
       - name: electron-vite build
         run: npm run build
@@ -152,10 +166,10 @@ jobs:
       #     traga um dotnet no PATH.
       #   • helper-win.integration.test.js — mesma guarda de plataforma.
       #   • whisper.integration.test.js — atrás de RUN_WHISPER=1.
-      #   • pcm-worklet.integration.test.js — a guarda `temElectron` aponta para
-      #     node_modules/electron/dist/electron.exe, caminho que NÃO existe no
-      #     macOS (lá é Electron.app). Ou seja: este teste nunca roda no macOS.
-      #     É uma lacuna real de cobertura, não um bug do CI — está anotada no
-      #     relatório do PR.
+      #
+      # Testes que só rodam AQUI (e se auto-pulam no Windows):
+      #   • helper-mac.parse.test.js — paridade entre o parser Swift e o espelho
+      #     em JS da gramática de atalhos.
+      #   • paster.darwin.test.js — o prazo do osascript.
       - name: npm test
         run: npm test

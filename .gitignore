@@ -6,7 +6,9 @@ out/
 helper/dita-hotkeys
 
 # binários de terceiros e artefatos gerados: quem clona roda `npm run deps:win`
-# e `npm run icons:win`
+# e `npm run icons:win` no Windows, `npm run deps:mac` no macOS
 app/resources/win/
+app/resources/mac/
 app/build/icon.ico
 app/.tmp-whisper/
+app/.tmp-whisper-mac/
