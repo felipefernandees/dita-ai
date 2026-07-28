@@ -59,7 +59,10 @@ export function createHotkeyMachine({ onStart, onStop, onCancel, now = () => Dat
 }
 
 export function startHotkeys({ helperPath, args = [], machine, onNoPermission = () => {} }) {
-  const proc = spawn(helperPath, args, { stdio: ['pipe', 'pipe', 'inherit'] })
+  // windowsHide: o helper é um app de CONSOLE (precisa ser: o contrato com ele
+  // é JSON no stdout). Sem isto o Windows abre uma janela de prompt junto com o
+  // app e ela fica lá o tempo todo. No macOS a opção é ignorada.
+  const proc = spawn(helperPath, args, { stdio: ['pipe', 'pipe', 'inherit'], windowsHide: true })
   let buffer = ''
   proc.stdout.on('data', (chunk) => {
     buffer += chunk.toString()
