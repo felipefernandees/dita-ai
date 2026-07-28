@@ -325,7 +325,10 @@ app.whenReady().then(async () => {
     // o helper Windows é multi-comando; o Swift só faz hotkeys
     return process.platform === 'win32' ? ['hotkeys', ...flags] : flags
   }
-  hotkeys = startHotkeys({
+  // Opções compartilhadas pelos DOIS pontos que sobem o helper (o boot e a troca
+  // de atalho). Enquanto eram literais duplicados, só o primeiro tinha aviso —
+  // trocar de atalho deixava o app sem supervisão pelo resto da sessão.
+  const opcoesHelper = () => ({
     helperPath: helperPath(),
     args: helperArgs(),
     machine,
@@ -336,8 +339,20 @@ app.whenReady().then(async () => {
           ? 'Ajustes > Privacidade e Segurança > Acessibilidade: ative o Dita Aí. Os atalhos ligam sozinhos em seguida.'
           : 'O atalho global falhou ao instalar. Feche outros apps de captura de teclado e reabra o Dita Aí.'
       }).show()
+    },
+    // O helper caiu e não voltou depois das tentativas. A partir daqui NENHUM
+    // atalho funciona, e sem este aviso o app fica aberto, com ícone na bandeja,
+    // parecendo saudável e sem responder a nada.
+    onHelperCaiu: ({ motivo }) => {
+      new Notification({
+        title: 'Os atalhos do Dita Aí pararam',
+        body: 'O componente de teclado caiu e não voltou. Feche e abra o Dita Aí para retomar os atalhos.'
+      }).show()
+      console.error('helper de atalhos desistiu:', motivo)
     }
   })
+
+  hotkeys = startHotkeys(opcoesHelper())
 
   ckpt('hotkeys')
   // Durante um ditado remoto o renderer continua gravando o webm de sempre — ele
@@ -415,7 +430,7 @@ app.whenReady().then(async () => {
     }
     if (key === 'toggleShortcut' || key === 'pttShortcut') {
       hotkeys.kill()
-      hotkeys = startHotkeys({ helperPath: helperPath(), args: helperArgs(), machine, onNoPermission: () => {} })
+      hotkeys = startHotkeys(opcoesHelper())
     }
   })
   ipcMain.handle('history:list', () => listHistory(300))
