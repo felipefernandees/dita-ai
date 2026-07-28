@@ -34,7 +34,7 @@ Passo a passo com mais detalhe: **[Windows/](Windows/)** · **[macOS/](macOS/)**
 
 Clone funcional do Wispr Flow, em Electron + whisper.cpp, com transcrição em português rodando **100% local** — nada sobe pra nuvem.
 
-No Windows existe também um **motor remoto opcional** (Gemini Live, com a sua própria chave gratuita): responde em ~440ms em vez de 7 a 10s, mas **envia o seu áudio para o Google**. Vem desligado, o padrão continua sendo o motor local. Detalhes em [docs/windows.md](docs/windows.md#motor-tempo-real-gemini).
+Nas duas plataformas existe também um **motor remoto opcional** (Gemini Live, com a sua própria chave gratuita): responde em ~440ms em vez de 7 a 10s, mas **envia o seu áudio para o Google**. Vem desligado, o padrão continua sendo o motor local, e dá pra voltar quando quiser. Detalhes em [docs/windows.md](docs/windows.md#motor-tempo-real-gemini).
 
 Projeto de uso interno aberto pra comunidade. Funciona, mas não é app de loja: o instalador não é assinado e o sistema pede permissão na primeira vez.
 
@@ -46,7 +46,7 @@ Projeto de uso interno aberto pra comunidade. Funciona, mas não é app de loja:
 
 | Sistema | Atalho | Guia completo |
 |---|---|---|
-| **macOS** (Apple Silicon) | `Fn+Espaço`, escolhido numa lista fixa | continue lendo abaixo |
+| **macOS** (Apple Silicon) | `Fn+Espaço` por padrão, mas você grava a combinação que quiser | continue lendo abaixo |
 | **Windows 10/11** x64 | `Ctrl+Shift+Espaço` por padrão, mas você grava a combinação que quiser | **[docs/windows.md](docs/windows.md)** |
 
 ---
@@ -55,30 +55,36 @@ Projeto de uso interno aberto pra comunidade. Funciona, mas não é app de loja:
 
 | Item | Por quê |
 |---|---|
-| **macOS com Apple Silicon** (M1 em diante) | os caminhos do Homebrew são de Apple Silicon (`/opt/homebrew`) e o whisper roda em Metal |
+| **macOS com Apple Silicon** (M1 em diante) | o whisper roda em Metal, e o binário compilado aqui é arm64 |
 | **16GB de RAM** (recomendado) | o modelo carregado ocupa cerca de 1,6GB |
 | **Node.js 20+** | rodar e compilar o app |
-| **Homebrew** | instalar o whisper.cpp |
+| **Xcode Command Line Tools** | compilar o helper Swift (`xcode-select --install`) |
+| **cmake** (só pra compilar) | construir o whisper.cpp: `brew install cmake`. O app pronto **não** depende de Homebrew nenhum |
 | **~2GB de disco livre** | o modelo de transcrição é baixado no primeiro uso |
 
 ## Instalação (macOS)
 
 ```bash
-# 1. dependências de sistema
-# (o ffmpeg não entra aqui: vem do pacote npm ffmpeg-static, nas duas plataformas)
-brew install whisper-cpp
-
-# 2. o app
+# 1. o app
 git clone https://github.com/felipefernandees/dita-ai.git
 cd dita-ai/app
 npm install
 
+# 2. o motor de transcrição (compila o whisper.cpp com Metal, ~1 minuto)
+#    o ffmpeg não entra aqui: vem do pacote npm ffmpeg-static, nas duas plataformas
+npm run deps:mac
+
 # 3. o helper de atalho global (Swift, compila em segundos)
-cd ../helper && bash build.sh
+npm run helper:mac
 
 # 4. rodar
-cd ../app && npm run dev
+npm run dev
 ```
+
+O `deps:mac` existe porque o whisper.cpp **não publica binário de macOS** (só de
+Windows). Ele clona a versão fixada, compila com o shader do Metal embutido e
+deixa um executável de 3,6MB em `app/resources/mac/whisper/` — que viaja dentro
+do `.app` e não depende de nada instalado na máquina de quem for usar.
 
 Na primeira execução ele baixa o modelo `ggml-large-v3-turbo` (cerca de 1,6GB) pra `~/Library/Application Support/dita-ai/models/`. Isso demora alguns minutos e acontece **uma vez só**.
 
@@ -113,9 +119,18 @@ Existe ainda um **dicionário de correção** aplicado depois da transcrição (
 
 | Ação | Atalho |
 |---|---|
-| Gravar | segure `Fn+Espaço`, fale, solte |
+| Gravar (liga/desliga) | `Fn+Espaço` |
+| Gravar segurando (push-to-talk) | segure o `⌘` direito, fale, solte |
 | Cancelar no meio | `Esc` |
 | Preferências | ícone na barra de menus |
+
+Os dois atalhos são configuráveis em Preferências: clique no botão do atalho e
+**aperte a combinação que você quiser** (`⌃⌥J`, `⇧⌘D`, `F13`, o que fizer
+sentido). A tela recusa e explica o motivo quando a combinação quebraria o
+sistema — uma tecla sozinha pararia de funcionar em todos os programas, e o
+macOS reserva coisas como `⌘Tab`. Combinações com a tecla `Fn` não podem ser
+capturadas (o Chromium não entrega essa tecla), então elas ficam como botões
+prontos ao lado.
 
 O histórico das transcrições fica num SQLite local em `~/Library/Application Support/dita-ai/`.
 
@@ -146,10 +161,10 @@ máquina e um áudio só: trate como indicação, não como benchmark.
 | Pasta | O que tem |
 |---|---|
 | `app/` | o Electron: `src/main` (processo principal, whisper, hotkeys, banco) e `src/renderer` (popup e preferências em React) |
-| `helper/` | `DitaHotkeys.swift`, o binário que escuta o atalho global no macOS |
+| `helper/` | `main.swift` + `ShortcutSpec.swift`, o binário que escuta o atalho global no macOS |
 | `helper-win/` | `dita-helper.exe`, o equivalente Windows: hook de teclado, colagem e app em foco |
 | `branding/` | ícones e identidade visual |
-| `docs/` | a spec de design, o plano da Fase 1, o [guia do Windows](docs/windows.md) e os roteiros de verificação manual |
+| `docs/` | a spec de design, os planos, o [guia do Windows](docs/windows.md) e os roteiros de verificação manual |
 
 ## Estado do projeto
 
@@ -161,7 +176,7 @@ Testes: `cd app && npm test`.
 
 Todo push e todo PR disparam o [CI](.github/workflows/ci.yml), que roda em **duas** máquinas: `windows-latest` e `macos-latest`. Nas duas ele compila o helper nativo, roda `electron-vite build` e executa a suíte. O job do macOS existe porque o port para Windows foi feito inteiramente no Windows — sem ele, uma regressão no lado macOS só apareceria na máquina de um usuário.
 
-O que nenhum dos dois cobre: atalho global com tecla física, microfone e colagem na janela em foco. Isso é verificação humana, com roteiro em [docs/verificacao-windows.md](docs/verificacao-windows.md).
+O que nenhum dos dois cobre: atalho global com tecla física, microfone e colagem na janela em foco. Isso é verificação humana, com roteiro por plataforma em [docs/verificacao-mac.md](docs/verificacao-mac.md) e [docs/verificacao-windows.md](docs/verificacao-windows.md).
 
 **O instalador do Windows fica em [Releases](https://github.com/felipefernandees/dita-ai/releases/latest)** (link de download no topo deste README). Ele é montado pelo [workflow de release](.github/workflows/release.yml) a partir de uma tag `v*`, no próprio GitHub, e já traz os backends `blas` e `cpu` do whisper.cpp. Não traz o backend Vulkan (opcional, compilado localmente com `npm run whisper:vulkan`) nem o modelo de 1,6GB, que é baixado no primeiro uso.
 
