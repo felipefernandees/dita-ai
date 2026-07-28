@@ -83,7 +83,10 @@ export async function startWhisperServer({
     '--prompt', VOCABULARIO, '--carry-initial-prompt',
     // corta o "[BLANK_AUDIO]"/reticências que o modelo inventa no silêncio
     '--suppress-nst'
-  ], { stdio: ['ignore', 'pipe', 'pipe'] })
+    // windowsHide: o whisper-server é app de console e fica vivo a sessão
+    // inteira — sem isto o usuário ganha uma janela de prompt permanente ao
+    // lado do app. Ignorado no macOS.
+  ], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
 
   // Sem isso, um binário ausente/corrompido (ENOENT, EACCES) sobe como
   // 'error' assíncrono sem listener — o processo da suíte/app inteiro
@@ -194,7 +197,9 @@ async function webmToWav(webmBuffer) {
   const wav = `${base}.wav`
   await writeFile(webm, Buffer.from(webmBuffer))
   await new Promise((resolve, reject) => {
+    // windowsHide: sem isto o ffmpeg pisca uma janela de console A CADA ditado
     execFile(ffmpegPath(), ['-y', '-i', webm, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wav],
+      { windowsHide: true },
       (err) => (err ? reject(err) : resolve()))
   })
   await unlink(webm).catch(() => {})
