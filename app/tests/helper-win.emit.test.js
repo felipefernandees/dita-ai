@@ -4,7 +4,7 @@ import { mkdirSync, existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { TECLAS_BASE, MODIFICADORES, RESERVADAS, ATALHOS, validarToggle } from '../src/renderer/src/atalhos.js'
+import { teclasBase, modificadores, reservadas, ATALHOS, validarToggle } from '../src/renderer/src/atalhos.js'
 
 // Um hook WH_KEYBOARD_LL tem orçamento de LowLevelHooksTimeout (~300ms) por
 // chamada; estourou, o Windows desregistra o hook em silêncio e os atalhos do
@@ -192,7 +192,7 @@ describe.skipIf(!hasDotnet)('ShortcutSpec: vocabulário de atalhos', () => {
   // Toda tecla base que o renderer conhece, atrás de um Ctrl (que é o mínimo
   // para a base comum passar da regra 1). Se o JS oferecer uma tecla que o
   // helper não sabe parsear, o usuário grava um atalho que nunca dispara.
-  const TOKENS_JS = [...new Set(Object.values(TECLAS_BASE))]
+  const TOKENS_JS = [...new Set(Object.values(teclasBase('win32')))]
   const COBERTURA = TOKENS_JS.map((t) => `toggle:ctrl+${t}`)
 
   const TODOS = [
@@ -271,8 +271,8 @@ describe.skipIf(!hasDotnet)('ShortcutSpec: vocabulário de atalhos', () => {
 
   it('conhece exatamente os mesmos modificadores, reservadas e teclas de PTT', () => {
     const t = R.get('tokens')
-    expect(t.modificadores).toEqual(MODIFICADORES)
-    expect([...t.reservadas].sort()).toEqual([...RESERVADAS].sort())
+    expect(t.modificadores).toEqual(modificadores('win32'))
+    expect([...t.reservadas].sort()).toEqual([...reservadas('win32')].sort())
     expect([...t.ptt].sort()).toEqual(ATALHOS.win32.ptt.map(([v]) => v).sort())
   })
 
@@ -293,7 +293,7 @@ describe.skipIf(!hasDotnet)('ShortcutSpec: vocabulário de atalhos', () => {
     ]
     for (const spec of casos) {
       const cs = R.get(`toggle:${spec}`)
-      const js = validarToggle(spec)
+      const js = validarToggle(spec, 'win32')
       expect(js.ok, `divergência de veredicto em "${spec}"`).toBe(cs.ok)
       // O motivo também: é ele que vira a frase em português para o usuário.
       // Um motivo diferente do lado do helper significa que a UI explicaria a

@@ -351,7 +351,7 @@ function MotorTranscricao({ motor, recarregar }) {
 // preventDefault: enquanto o modo está ligado, nada mais na janela pode reagir
 // ao teclado. Sem isso, gravar "Ctrl+A" selecionaria o texto da tela junto, e
 // gravar "Tab" moveria o foco para fora do próprio botão.
-function CapturaAtalho({ valor, onSave }) {
+function CapturaAtalho({ valor, plataforma, presets, onSave }) {
   const [capturando, setCapturando] = useState(false)
   const [erro, setErro] = useState(null)
   const botao = useRef(null)
@@ -371,7 +371,7 @@ function CapturaAtalho({ valor, onSave }) {
         return
       }
 
-      const r = specDeEvento(e)
+      const r = specDeEvento(e, plataforma)
       // Só modificadores segurados: o usuário está no meio da combinação.
       if (r.pendente) { setErro(null); return }
       // Recusa NÃO sai do modo de captura: o usuário acabou de descobrir a
@@ -398,9 +398,9 @@ function CapturaAtalho({ valor, onSave }) {
       window.removeEventListener('mousedown', onMouseDown, true)
       window.removeEventListener('blur', sair)
     }
-  }, [capturando, onSave])
+  }, [capturando, onSave, plataforma])
 
-  const aviso = capturando || erro ? null : avisoToggle(valor)
+  const aviso = capturando || erro ? null : avisoToggle(valor, plataforma)
 
   return (
     <div style={S.controle}>
@@ -410,8 +410,20 @@ function CapturaAtalho({ valor, onSave }) {
         onClick={() => { setErro(null); setCapturando(!capturando) }}
         style={S.captura(capturando)}
       >
-        {capturando ? 'Pressione a combinação…' : rotuloToggle(valor)}
+        {capturando ? 'Pressione a combinação…' : rotuloToggle(valor, plataforma)}
       </button>
+      {/* As combinações com a tecla Fn são impossíveis de capturar: o Chromium
+          não entrega essa tecla em KeyboardEvent nenhum no macOS. Sem estes
+          botões, quem trocasse o atalho não teria como voltar ao fn+Espaço. */}
+      {presets?.length > 0 && !capturando && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end', maxWidth: 262 }}>
+          {presets.map(([spec, rotulo]) => (
+            <button key={spec} type="button" aria-pressed={spec === valor} onClick={() => onSave(spec)} style={S.pill(spec === valor)}>
+              {rotulo}
+            </button>
+          ))}
+        </div>
+      )}
       {capturando && !erro && <div style={S.nota(C.muted)}>Esc cancela</div>}
       {erro && <div style={S.nota(C.alerta)}>{erro}</div>}
       {aviso && <div style={S.nota(C.muted)}>{aviso}</div>}
@@ -439,7 +451,11 @@ function EscolhaPtt({ opcoes, valor, onSave }) {
 }
 
 function Config({ settings, mics, update }) {
-  const atalhos = ATALHOS[settings.platform] || ATALHOS.darwin
+  // A plataforma vem do processo main pelo IPC: no renderer não existe
+  // `process.platform`. Ela decide a GRAMÁTICA de atalhos, não só os rótulos —
+  // por isso é passada adiante em vez de cada componente adivinhar.
+  const plataforma = ATALHOS[settings.platform] ? settings.platform : 'darwin'
+  const atalhos = ATALHOS[plataforma]
   const [motor, setMotor] = useState(null)
 
   // O estado do motor mora no processo main (config.json), não no `settings`
@@ -460,22 +476,14 @@ function Config({ settings, mics, update }) {
         <div style={S.row}>
           <div>
             <div style={S.label}>Atalho principal (liga e desliga)</div>
-            <div style={S.sub}>
-              {atalhos.capturaToggle
-                ? 'Clique e aperte a combinação que você quiser'
-                : 'Aperta uma vez pra gravar, de novo pra transcrever'}
-            </div>
+            <div style={S.sub}>Clique e aperte a combinação que você quiser</div>
           </div>
-          {atalhos.capturaToggle ? (
-            <CapturaAtalho
-              valor={settings.toggleShortcut || atalhos.padraoToggle}
-              onSave={(spec) => update('toggleShortcut', spec)}
-            />
-          ) : (
-            <select style={S.select} value={settings.toggleShortcut || atalhos.padraoToggle} onChange={(e) => update('toggleShortcut', e.target.value)}>
-              {atalhos.toggle.map(([valor, rotulo]) => <option key={valor} value={valor}>{rotulo}</option>)}
-            </select>
-          )}
+          <CapturaAtalho
+            valor={settings.toggleShortcut || atalhos.padraoToggle}
+            plataforma={plataforma}
+            presets={atalhos.presets}
+            onSave={(spec) => update('toggleShortcut', spec)}
+          />
         </div>
         <div style={{ ...S.row, ...S.divider }}>
           <div>

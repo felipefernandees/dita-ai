@@ -50,15 +50,17 @@ describe('defaults de atalho', () => {
   // O caminho do default é o único que roda sem o usuário ter escolhido nada:
   // se ele não passar pelo parser, TODO usuário novo cai no fallback interno do
   // helper — que hoje coincide, mas coincidência não é contrato.
-  it('o default do Windows é um spec válido pela gramática do helper', async () => {
-    const { DEFAULT_TOGGLE, DEFAULT_PTT } = await loadDefaultsFor('win32')
-    expect(validarToggle(DEFAULT_TOGGLE)).toEqual({ ok: true, spec: DEFAULT_TOGGLE })
-    expect(ATALHOS.win32.ptt.map(([v]) => v)).toContain(DEFAULT_PTT)
+  it.each(['win32', 'darwin'])('o default de %s é um spec válido pela gramática daquele helper', async (plataforma) => {
+    const { DEFAULT_TOGGLE, DEFAULT_PTT } = await loadDefaultsFor(plataforma)
+    expect(validarToggle(DEFAULT_TOGGLE, plataforma)).toEqual({ ok: true, spec: DEFAULT_TOGGLE })
+    expect(ATALHOS[plataforma].ptt.map(([v]) => v)).toContain(DEFAULT_PTT)
   })
 
-  it('o default do macOS está entre as opções que a UI oferece lá', async () => {
-    const { DEFAULT_TOGGLE, DEFAULT_PTT } = await loadDefaultsFor('darwin')
-    expect(ATALHOS.darwin.toggle.map(([v]) => v)).toContain(DEFAULT_TOGGLE)
-    expect(ATALHOS.darwin.ptt.map(([v]) => v)).toContain(DEFAULT_PTT)
+  // O default do macOS usa a tecla Fn, que o KeyboardEvent do Chromium não
+  // entrega: sem um preset para ele, quem trocasse o atalho não teria como
+  // voltar ao que o app sempre usou.
+  it('o default do macOS é alcançável pela UI mesmo sem captura', async () => {
+    const { DEFAULT_TOGGLE } = await loadDefaultsFor('darwin')
+    expect(ATALHOS.darwin.presets.map(([v]) => v)).toContain(DEFAULT_TOGGLE)
   })
 })

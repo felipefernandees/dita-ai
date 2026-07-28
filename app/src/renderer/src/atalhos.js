@@ -1,44 +1,49 @@
 // Vocabulário de atalhos do lado do renderer.
 //
-// Este arquivo é o ESPELHO EM JS de helper-win/DitaHelper/ShortcutSpec.cs. Lá o
+// Este arquivo é o ESPELHO EM JS dos dois parsers nativos:
+// helper-win/DitaHelper/ShortcutSpec.cs (C#) e helper/ShortcutSpec.swift. Lá o
 // helper faz o parse de --toggle=<spec> --ptt=<spec>; aqui a UI monta a mesma
 // string a partir de um KeyboardEvent e explica em português por que uma
-// combinação foi recusada. As duas implementações precisam concordar sobre
+// combinação foi recusada. As três implementações precisam concordar sobre
 // quais tokens existem e quais combinações são válidas.
 //
 // Nada na linguagem impede que divirjam, e a divergência é silenciosa: a UI
 // grava um spec, o helper não reconhece, cai no default e o usuário só percebe
-// que "o atalho não pegou". Quem paga esse preço são dois testes —
-// tests/atalhos.test.js (o que dá para verificar só em JS) e o cenário `parse`
-// de tests/helper-win.emit.test.js, que alimenta os MESMOS specs no
-// ShortcutSpec.cs de verdade e compara os dois veredictos. É por isso que este
-// módulo é .js puro, sem JSX: para ser importável do Vitest sem pipeline de
-// React.
+// que "o atalho não pegou". Quem paga esse preço são três testes —
+// tests/atalhos.test.js (o que dá para verificar só em JS), o cenário `parse`
+// de tests/helper-win.emit.test.js e tests/helper-mac.parse.test.js, que
+// alimentam os MESMOS specs nos parsers nativos de verdade e comparam os
+// veredictos. É por isso que este módulo é .js puro, sem JSX: para ser
+// importável do Vitest sem pipeline de React.
 //
-// Formato: tokens minúsculos unidos por '+', zero ou mais modificadores nesta
-// ordem exata, seguidos de exatamente uma tecla base. Ex.: 'ctrl+shift+space'.
-export const MODIFICADORES = ['ctrl', 'alt', 'shift', 'win']
+// POR QUE A GRAMÁTICA É POR PLATAFORMA
+//
+// O formato é o mesmo nas duas (tokens minúsculos unidos por '+', zero ou mais
+// modificadores na ordem canônica, seguidos de exatamente uma tecla base), mas
+// o VOCABULÁRIO não pode ser: o Windows tem a tecla Windows e não entrega a Fn
+// ao hook; o macOS tem Command e Option, entrega a Fn, e não tem Insert. Uma
+// tabela só, com a união de tudo, deixaria a UI oferecer 'win+j' num Mac e
+// 'cmd+j' num PC — atalhos que o helper daquela máquina jamais escutaria.
+//
+// Toda função pública recebe a plataforma explicitamente. Não existe default:
+// no renderer não há `process.platform` (contextIsolation), a plataforma chega
+// do processo main pelo IPC, e um default aqui seria a gramática errada
+// escolhida em silêncio.
 
-const ROTULO_MODIFICADOR = { ctrl: 'Ctrl', alt: 'Alt', shift: 'Shift', win: 'Win' }
-
+// --- tabelas de teclas base -------------------------------------------------
+//
 // KeyboardEvent.code -> token do spec.
 //
 // A chave é o `code` (posição física) e nunca o `key` (caractere produzido):
-// os VK_* do Windows também são posicionais, então gravar pelo caractere faria
-// o mesmo atalho apontar para teclas diferentes conforme o layout ativo no
-// momento da gravação. É por isso que as teclas OEM têm nome de legenda US
-// ('semicolon') mesmo com rótulo de ABNT2 ('Ç') logo abaixo.
-export const TECLAS_BASE = montarTeclas()
-
-// Os tokens são únicos por construção (nenhuma posição física compartilha nome
-// com outra), então o Set tem o mesmo tamanho da tabela.
-const TOKENS_BASE = new Set(Object.values(TECLAS_BASE))
-
-function montarTeclas() {
+// tanto os VK_* do Windows quanto os virtual keycodes do macOS são posicionais,
+// então gravar pelo caractere faria o mesmo atalho apontar para teclas
+// diferentes conforme o layout ativo no momento da gravação. É por isso que as
+// teclas OEM têm nome de legenda US ('semicolon') mesmo com rótulo de ABNT2
+// ('Ç') logo abaixo.
+function teclasComuns() {
   const t = {}
   for (let i = 0; i < 26; i++) t[`Key${String.fromCharCode(65 + i)}`] = String.fromCharCode(97 + i)
   for (let i = 0; i <= 9; i++) t[`Digit${i}`] = String(i)
-  for (let i = 1; i <= 24; i++) t[`F${i}`] = `f${i}`
 
   Object.assign(t, {
     Space: 'space',
@@ -46,7 +51,6 @@ function montarTeclas() {
     Tab: 'tab',
     Escape: 'esc',
     Backspace: 'backspace',
-    Insert: 'insert',
     Delete: 'delete',
     Home: 'home',
     End: 'end',
@@ -70,22 +74,32 @@ function montarTeclas() {
     Comma: 'comma',                // , <
     Period: 'period',              // . >
     IntlBackslash: 'intlbackslash', // \ | (tecla extra ISO)
-    IntlRo: 'intlro'               // / ? (tecla extra do ABNT2)
+    IntlRo: 'intlro'               // / ? (tecla extra do ABNT2/JIS)
   })
   return t
 }
 
-// token -> rótulo mostrado no botão de atalho. As teclas OEM são rotuladas com
-// a legenda do ABNT2, que é o teclado do usuário — 'semicolon' não diz nada a
-// quem tem um Ç impresso ali.
-const ROTULO_BASE = {
+function teclasWin() {
+  const t = teclasComuns()
+  for (let i = 1; i <= 24; i++) t[`F${i}`] = `f${i}`
+  t.Insert = 'insert'  // teclado de PC tem; o da Apple não
+  return t
+}
+
+function teclasMac() {
+  const t = teclasComuns()
+  // O macOS só tem virtual keycode até F20. F21-F24 existiriam no spec mas
+  // nunca casariam com tecla nenhuma — oferecer seria prometer o que o helper
+  // não consegue escutar.
+  for (let i = 1; i <= 20; i++) t[`F${i}`] = `f${i}`
+  return t
+}
+
+const ROTULOS_BASE_COMUNS = {
   space: 'Espaço',
   enter: 'Enter',
   tab: 'Tab',
   esc: 'Esc',
-  backspace: 'Backspace',
-  insert: 'Insert',
-  delete: 'Delete',
   home: 'Home',
   end: 'End',
   pageup: 'Page Up',
@@ -109,23 +123,110 @@ const ROTULO_BASE = {
   intlro: '/'
 }
 
+// --- as duas gramáticas -----------------------------------------------------
+
+const GRAMATICA_WIN32 = {
+  modificadores: ['ctrl', 'alt', 'shift', 'win'],
+  // Nada a traduzir: os tokens do Windows já são os nomes das teclas.
+  aliases: {},
+  rotulosModificador: { ctrl: 'Ctrl', alt: 'Alt', shift: 'Shift', win: 'Win' },
+  teclas: teclasWin(),
+  rotulosBase: {
+    ...ROTULOS_BASE_COMUNS,
+    backspace: 'Backspace',
+    insert: 'Insert',
+    delete: 'Delete'
+  },
+  // Máximo de tecla de função que existe no vocabulário desta plataforma.
+  maxTeclaDeFuncao: 24,
+  // Combinações que o sistema operacional reserva. Não é preciosismo: o hook
+  // low-level nem vê ctrl+alt+delete (o SAS é tratado antes, em kernel) nem
+  // win+l (bloqueio de sessão), então esses atalhos nunca disparariam. alt+f4 e
+  // alt+tab o hook vê, mas suprimi-las quebraria fechar e alternar janela no
+  // sistema inteiro.
+  reservadas: ['alt+f4', 'alt+tab', 'ctrl+alt+delete', 'win+l'],
+  // KeyboardEvent -> modificadores. O Chromium reporta a tecla Windows como
+  // metaKey.
+  modificadoresDoEvento: (e) => {
+    const mods = []
+    if (e.ctrlKey) mods.push('ctrl')
+    if (e.altKey) mods.push('alt')
+    if (e.shiftKey) mods.push('shift')
+    if (e.metaKey) mods.push('win')
+    return mods
+  },
+  frases: {
+    Reservada: 'O Windows reserva essa combinação para o sistema: o atalho nunca chegaria ao Dita Aí.'
+  }
+}
+
+const GRAMATICA_DARWIN = {
+  // Ordem canônica na convenção da Apple: fn ⌃ ⌥ ⇧ ⌘. Ela também é o que faz
+  // 'fn+space' — o default histórico do app, gravado no settings.json de quem
+  // já usa — continuar sendo sua própria forma canônica.
+  modificadores: ['fn', 'ctrl', 'opt', 'shift', 'cmd'],
+  // 'opt' é o token canônico (é o nome impresso na tecla, e é o que os specs
+  // legados do app usam); 'alt' é aceito porque é o nome no resto do mundo, e
+  // porque um settings.json vindo do Windows não pode virar erro.
+  // 'win' entra na lista pelo mesmo motivo dos outros: um settings.json trazido
+  // de um PC ('win+j') vira o atalho equivalente aqui em vez de erro.
+  aliases: { alt: 'opt', option: 'opt', command: 'cmd', meta: 'cmd', win: 'cmd', control: 'ctrl' },
+  rotulosModificador: { fn: 'fn', ctrl: '⌃', opt: '⌥', shift: '⇧', cmd: '⌘' },
+  teclas: teclasMac(),
+  rotulosBase: {
+    ...ROTULOS_BASE_COMUNS,
+    backspace: '⌫',
+    delete: '⌦'
+  },
+  maxTeclaDeFuncao: 20,
+  // No macOS o event tap fica ANTES do sistema, então tecnicamente daria para
+  // roubar qualquer uma delas. É justamente por isso que a lista existe:
+  // roubar ⌘Tab (alternar app), ⌘Q (sair) ou ⌘W (fechar janela) deixaria o Mac
+  // sem essas funções em todos os programas, e ⌃⌘Q é o bloqueio de tela.
+  reservadas: ['cmd+tab', 'cmd+q', 'cmd+w', 'ctrl+cmd+q'],
+  // A tecla Fn NÃO aparece aqui: o Chromium no macOS não a expõe em
+  // KeyboardEvent (não há `fnKey`, e getModifierState('Fn') é sempre false).
+  // Por isso a UI do macOS oferece, ao lado da captura, presets para as
+  // combinações com Fn — ver ATALHOS.darwin.presets.
+  modificadoresDoEvento: (e) => {
+    const mods = []
+    if (e.ctrlKey) mods.push('ctrl')
+    if (e.altKey) mods.push('opt')
+    if (e.shiftKey) mods.push('shift')
+    if (e.metaKey) mods.push('cmd')
+    return mods
+  },
+  frases: {
+    Reservada: 'O macOS usa essa combinação no sistema inteiro: roubá-la deixaria você sem ela em todos os programas.'
+  }
+}
+
+export const GRAMATICAS = { win32: GRAMATICA_WIN32, darwin: GRAMATICA_DARWIN }
+
+function gramatica(plataforma) {
+  const g = GRAMATICAS[plataforma]
+  if (!g) throw new Error(`atalhos.js: plataforma desconhecida '${plataforma}'`)
+  return g
+}
+
+// Exportado para os testes e para quem precisar percorrer o vocabulário.
+export function modificadores(plataforma) { return gramatica(plataforma).modificadores }
+export function teclasBase(plataforma) { return gramatica(plataforma).teclas }
+export function reservadas(plataforma) { return gramatica(plataforma).reservadas }
+
 // Só teclas de função valem sozinhas. Qualquer outra base sem modificador seria
 // suprimida pelo hook no sistema inteiro: configurar 'j' faria a letra J parar
 // de funcionar em todos os programas — inclusive no campo onde o usuário
 // tentaria desfazer.
-export function podeFicarSozinha(token) {
-  return /^f([1-9]|1\d|2[0-4])$/.test(token)
+export function podeFicarSozinha(token, plataforma) {
+  const m = /^f(\d{1,2})$/.exec(String(token))
+  if (!m) return false
+  const n = Number(m[1])
+  return n >= 1 && n <= gramatica(plataforma).maxTeclaDeFuncao
 }
 
-// Combinações que o sistema operacional reserva. Não é preciosismo: o hook
-// low-level nem vê ctrl+alt+delete (o SAS é tratado antes, em kernel) nem
-// win+l (bloqueio de sessão), então esses atalhos nunca disparariam. alt+f4 e
-// alt+tab o hook vê, mas suprimi-las quebraria fechar e alternar janela no
-// sistema inteiro.
-export const RESERVADAS = ['alt+f4', 'alt+tab', 'ctrl+alt+delete', 'win+l']
-
-// Motivos espelham o enum MotivoRecusa do ShortcutSpec.cs — mesmos nomes de
-// propósito, para os dois testes poderem comparar veredicto com veredicto.
+// Motivos espelham os enums MotivoRecusa dos dois parsers nativos — mesmos
+// nomes de propósito, para os testes poderem comparar veredicto com veredicto.
 const MENSAGENS = {
   Vazio: 'Combinação vazia.',
   TokenDesconhecido: 'Essa tecla não pode ser usada em atalhos.',
@@ -133,42 +234,48 @@ const MENSAGENS = {
   BaseDuplicada: 'Um atalho só pode ter uma tecla principal.',
   ModificadorRepetido: 'Modificador repetido na combinação.',
   PrecisaModificador:
-    'Sozinha, essa tecla deixaria de funcionar em todos os programas. Junte Ctrl, Alt, Shift ou Win — ou use uma tecla de função (F1 a F24), que pode ficar sozinha.',
-  Reservada: 'O Windows reserva essa combinação para o sistema: o atalho nunca chegaria ao Dita Aí.'
+    'Sozinha, essa tecla deixaria de funcionar em todos os programas. Junte um modificador — ou use uma tecla de função, que pode ficar sozinha.',
+  Reservada: 'O sistema reserva essa combinação: o atalho nunca chegaria ao Dita Aí.'
 }
 
-function recusa(motivo) {
-  return { ok: false, motivo, mensagem: MENSAGENS[motivo] }
+function recusa(motivo, plataforma) {
+  const propria = gramatica(plataforma).frases[motivo]
+  return { ok: false, motivo, mensagem: propria || MENSAGENS[motivo] }
 }
 
 // Valida e canonicaliza um spec já em texto. Aceita ordem trocada de
-// modificadores (o helper também aceita) e devolve sempre a forma canônica —
+// modificadores (os helpers também aceitam) e devolve sempre a forma canônica —
 // entre outras coisas para que 'f4+alt' não escape do filtro de reservadas.
-export function validarToggle(spec) {
-  if (typeof spec !== 'string' || spec.trim() === '') return recusa('Vazio')
+export function validarToggle(spec, plataforma) {
+  const g = gramatica(plataforma)
+  if (typeof spec !== 'string' || spec.trim() === '') return recusa('Vazio', plataforma)
 
-  const mods = { ctrl: false, alt: false, shift: false, win: false }
+  const vistos = new Set()
   let base = null
 
-  for (const parte of spec.trim().toLowerCase().split('+')) {
-    if (parte === '') return recusa('Vazio')
-    if (parte in mods) {
-      if (mods[parte]) return recusa('ModificadorRepetido')
-      mods[parte] = true
+  for (const cru of spec.trim().toLowerCase().split('+')) {
+    if (cru === '') return recusa('Vazio', plataforma)
+    const parte = g.aliases[cru] || cru
+
+    if (g.modificadores.includes(parte)) {
+      if (vistos.has(parte)) return recusa('ModificadorRepetido', plataforma)
+      vistos.add(parte)
       continue
     }
-    if (!TOKENS_BASE.has(parte)) return recusa('TokenDesconhecido')
-    if (base !== null) return recusa('BaseDuplicada')
+    if (!Object.values(g.teclas).includes(parte)) return recusa('TokenDesconhecido', plataforma)
+    if (base !== null) return recusa('BaseDuplicada', plataforma)
     base = parte
   }
 
-  if (base === null) return recusa('SemBase')
+  if (base === null) return recusa('SemBase', plataforma)
 
-  const usados = MODIFICADORES.filter((m) => mods[m])
-  if (usados.length === 0 && !podeFicarSozinha(base)) return recusa('PrecisaModificador')
+  const usados = g.modificadores.filter((m) => vistos.has(m))
+  if (usados.length === 0 && !podeFicarSozinha(base, plataforma)) {
+    return recusa('PrecisaModificador', plataforma)
+  }
 
   const canonico = [...usados, base].join('+')
-  if (RESERVADAS.includes(canonico)) return recusa('Reservada')
+  if (g.reservadas.includes(canonico)) return recusa('Reservada', plataforma)
 
   return { ok: true, spec: canonico }
 }
@@ -177,52 +284,76 @@ export function validarToggle(spec) {
 // só houver modificadores segurados: durante a captura isso é o estado normal,
 // não um erro — o usuário está no meio da combinação.
 //
-// Atenção ao AltGr do ABNT2: o Chromium reporta ctrlKey E altKey nele, porque é
-// literalmente o que o Windows entrega. Não dá para distinguir de um Ctrl+Alt
-// de verdade, então AltGr+tecla vira 'ctrl+alt+tecla' — que é o atalho que o
-// helper vai de fato escutar, então a UI não está mentindo.
-export function specDeEvento(e) {
-  const base = TECLAS_BASE[e.code]
+// Atenção ao AltGr do ABNT2 no Windows: o Chromium reporta ctrlKey E altKey
+// nele, porque é literalmente o que o Windows entrega. Não dá para distinguir
+// de um Ctrl+Alt de verdade, então AltGr+tecla vira 'ctrl+alt+tecla' — que é o
+// atalho que o helper vai de fato escutar, então a UI não está mentindo.
+export function specDeEvento(e, plataforma) {
+  const g = gramatica(plataforma)
+  const base = g.teclas[e.code]
   if (base === undefined) {
-    // Modificadores puros (ControlLeft, AltRight, ShiftLeft, MetaLeft…) e
-    // CapsLock não estão na tabela: a combinação ainda não terminou.
+    // Modificadores puros (ControlLeft, AltRight, ShiftLeft, MetaLeft…),
+    // CapsLock e, no macOS, a própria Fn não estão na tabela: a combinação
+    // ainda não terminou.
     if (/^(Control|Alt|Shift|Meta)(Left|Right)$/.test(e.code) || e.code === 'CapsLock') {
       return { pendente: true }
     }
-    return recusa('TokenDesconhecido')
+    if (plataforma === 'darwin' && e.code === 'Fn') return { pendente: true }
+    return recusa('TokenDesconhecido', plataforma)
   }
 
-  const mods = []
-  if (e.ctrlKey) mods.push('ctrl')
-  if (e.altKey) mods.push('alt')
-  if (e.shiftKey) mods.push('shift')
-  if (e.metaKey) mods.push('win')
-
-  return validarToggle([...mods, base].join('+'))
+  return validarToggle([...g.modificadoresDoEvento(e), base].join('+'), plataforma)
 }
 
 // Aviso NÃO-bloqueante: a combinação funciona, mas tem um efeito colateral que
 // o usuário merece saber antes de gravar.
-export function avisoToggle(spec) {
-  const r = validarToggle(spec)
+export function avisoToggle(spec, plataforma) {
+  const r = validarToggle(spec, plataforma)
   if (!r.ok) return null
-  if (r.spec.startsWith('win+') || r.spec.includes('+win+')) {
-    // O hook engole a tecla base, então o shell vê a tecla Windows como se
-    // tivesse sido apertada sozinha e abre o menu Iniciar ao soltá-la.
-    return 'A tecla Windows abre o menu Iniciar ao ser solta — o atalho funciona, mas o menu aparece junto.'
+  const partes = r.spec.split('+')
+
+  if (plataforma === 'win32') {
+    if (partes.includes('win')) {
+      // O hook engole a tecla base, então o shell vê a tecla Windows como se
+      // tivesse sido apertada sozinha e abre o menu Iniciar ao soltá-la.
+      return 'A tecla Windows abre o menu Iniciar ao ser solta — o atalho funciona, mas o menu aparece junto.'
+    }
+    return null
+  }
+
+  // Spotlight. Funciona (o event tap vê antes), mas o usuário fica sem
+  // Spotlight nessa combinação e precisa saber disso ANTES de gravar.
+  if (r.spec === 'cmd+space') {
+    return 'Essa é a combinação do Spotlight: o Dita Aí passa na frente e o Spotlight deixa de abrir com ela.'
+  }
+  if (partes.includes('fn')) {
+    // O caso já mordeu o Felipe uma vez: com a tecla globo configurada para
+    // "Mostrar Emoji e Símbolos" ou "Iniciar Ditado", o painel da Apple aparece
+    // por cima do ditado.
+    return 'Se a tecla globo estiver configurada para emojis ou para o ditado da Apple, o painel dela aparece junto. Ajustes > Teclado > “Pressionar a tecla globo para” = Não Fazer Nada.'
+  }
+  const funcaoSozinha = partes.length === 1 && /^f\d{1,2}$/.test(partes[0])
+  if (funcaoSozinha && Number(partes[0].slice(1)) <= 12) {
+    // Com "Usar F1, F2 etc. como teclas de função" desligado (o padrão da
+    // Apple), a tecla nua manda brilho/volume e o F só chega com a Fn junto.
+    // O helper aceita os dois casos, mas o usuário precisa saber por que às
+    // vezes precisa da Fn.
+    return 'Nos teclados da Apple essa tecla controla brilho/volume por padrão: pode ser preciso segurar a tecla Fn junto. O Dita Aí aceita das duas formas.'
   }
   return null
 }
 
-// 'ctrl+shift+space' -> 'Ctrl + Shift + Espaço'
-export function rotuloToggle(spec) {
-  const r = validarToggle(spec)
+// 'ctrl+shift+space' -> 'Ctrl + Shift + Espaço' (Windows)
+// 'opt+space'        -> '⌥ + Espaço'            (macOS)
+export function rotuloToggle(spec, plataforma) {
+  const g = gramatica(plataforma)
+  const r = validarToggle(spec, plataforma)
   // Spec inválido (ex.: um valor de macOS num settings.json copiado): mostra o
   // texto cru em vez de inventar um rótulo bonito para algo que não vai valer.
   if (!r.ok) return spec || '—'
   return r.spec
     .split('+')
-    .map((p) => ROTULO_MODIFICADOR[p] || ROTULO_BASE[p] || p.toUpperCase())
+    .map((p) => g.rotulosModificador[p] || g.rotulosBase[p] || p.toUpperCase())
     .join(' + ')
 }
 
@@ -245,30 +376,44 @@ const PTT_WIN32 = [
   ['lalt', 'Alt esquerdo', 'Soltar o Alt sozinho ativa a barra de menus do programa em foco.']
 ]
 
+// Os tokens do macOS são os mesmos de sempre ('rcmd', 'ropt'): o valor já está
+// gravado no settings.json de quem usa o app, e renomear para 'ralt' só para
+// combinar com o Windows trocaria o push-to-talk de todo mundo na atualização.
+// O parser Swift aceita 'ralt'/'lalt' como alias, para um settings.json vindo
+// de um PC não virar erro.
+const PTT_DARWIN = [
+  ['rcmd', '⌘ direito'],
+  ['lcmd', '⌘ esquerdo'],
+  ['rctrl', '⌃ direito'],
+  ['lctrl', '⌃ esquerdo'],
+  ['rshift', '⇧ direito'],
+  ['lshift', '⇧ esquerdo'],
+  ['ropt', '⌥ direito'],
+  ['lopt', '⌥ esquerdo'],
+  ['fn', 'fn / 🌐', 'A tecla globo pode abrir emojis ou o ditado da Apple ao ser solta. Ajustes > Teclado > “Pressionar a tecla globo para” = Não Fazer Nada.']
+]
+
 export const ATALHOS = {
   darwin: {
-    // No macOS quem faz o parse é o helper em Swift, que continua com uma lista
-    // fixa — a gramática de specs deste arquivo é do helper do Windows. Por
-    // isso lá a UI segue sendo um <select>.
-    capturaToggle: false,
-    toggle: [
-      ['fn+space', 'Fn + Espaço'],
-      ['opt+space', '⌥ Option + Espaço'],
-      ['ctrl+space', '⌃ Control + Espaço'],
-      ['f5', 'F5']
+    capturaToggle: true,
+    // O que a captura NÃO alcança: o Chromium não entrega a tecla Fn em
+    // KeyboardEvent nenhum no macOS. Sem estes botões, o default histórico do
+    // app (fn+space) seria impossível de escolher de volta depois de trocado.
+    presets: [
+      ['fn+space', 'fn + Espaço'],
+      ['fn+f5', 'fn + F5']
     ],
-    ptt: [
-      ['rcmd', '⌘ Command direito'],
-      ['ropt', '⌥ Option direito']
-    ],
+    toggle: null,
+    ptt: PTT_DARWIN,
     padraoToggle: 'fn+space',
-    padraoPtt: 'rcmd',
+    padraoPtt: 'rcmd'
   },
   win32: {
     capturaToggle: true,
+    presets: null,
     toggle: null,
     ptt: PTT_WIN32,
     padraoToggle: 'ctrl+shift+space',
-    padraoPtt: 'rctrl',
+    padraoPtt: 'rctrl'
   }
 }

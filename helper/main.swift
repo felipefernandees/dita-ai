@@ -14,14 +14,57 @@ func emit(_ event: String) {
     fflush(stdout)
 }
 
-// Configuração de atalhos via argv: --toggle=fn+space|opt+space|ctrl+space|f5
-// e --ptt=rcmd|ropt
-var toggleMode = "fn+space"
-var pttMode = "rcmd"
-for arg in CommandLine.arguments {
-    if arg.hasPrefix("--toggle=") { toggleMode = String(arg.dropFirst("--toggle=".count)) }
-    if arg.hasPrefix("--ptt=") { pttMode = String(arg.dropFirst("--ptt=".count)) }
+// Modo `parse`: não sobe tap nenhum, só responde o que o parser acha de um spec
+// e sai. É por aqui que app/tests/helper-mac.parse.test.js compara, veredicto a
+// veredicto, este parser com o espelho em JS (src/renderer/src/atalhos.js) —
+// sem isso os dois divergem em silêncio e o usuário só descobre que "o atalho
+// não pegou".
+func rodarParse(_ args: [String]) -> Never {
+    let specs = Array(args.dropFirst(2))
+    var saidas: [String] = []
+    for spec in specs {
+        let escapado = spec.replacingOccurrences(of: "\\", with: "\\\\")
+                           .replacingOccurrences(of: "\"", with: "\\\"")
+        do {
+            let s = try ToggleSpec.tryParse(spec)
+            saidas.append("{\"spec\":\"\(escapado)\",\"ok\":true,\"canonico\":\"\(s.serializar())\",\"keyCode\":\(s.keyCode)}")
+        } catch let r as ToggleSpec.Recusa {
+            saidas.append("{\"spec\":\"\(escapado)\",\"ok\":false,\"motivo\":\"\(r.motivo.rawValue)\"}")
+        } catch {
+            saidas.append("{\"spec\":\"\(escapado)\",\"ok\":false,\"motivo\":\"TokenDesconhecido\"}")
+        }
+    }
+    print("[" + saidas.joined(separator: ",") + "]")
+    exit(0)
 }
+
+// Modo `ptt`: mesma ideia do parse, para a lista de push-to-talk.
+func rodarPtt(_ args: [String]) -> Never {
+    let specs = Array(args.dropFirst(2))
+    let saidas = specs.map { spec -> String in
+        "{\"spec\":\"\(spec)\",\"ok\":\(PttSpec.valido(spec) ? "true" : "false"),\"keyCode\":\(PttSpec.parse(spec).code)}"
+    }
+    print("[" + saidas.joined(separator: ",") + "]")
+    exit(0)
+}
+
+let argumentos = CommandLine.arguments
+if argumentos.count > 1 {
+    if argumentos[1] == "parse" { rodarParse(argumentos) }
+    if argumentos[1] == "ptt" { rodarPtt(argumentos) }
+}
+
+// Configuração de atalhos via argv: --toggle=<spec> --ptt=<spec>.
+// O vocabulário completo está em ShortcutSpec.swift; spec inválido cai no
+// default em vez de derrubar o helper e deixar o app sem atalho nenhum.
+var toggleArg = ToggleSpec.padrao
+var pttArg = PttSpec.padrao
+for arg in argumentos {
+    if arg.hasPrefix("--toggle=") { toggleArg = String(arg.dropFirst("--toggle=".count)) }
+    if arg.hasPrefix("--ptt=") { pttArg = String(arg.dropFirst("--ptt=".count)) }
+}
+let toggleSpec = ToggleSpec.parse(toggleArg)
+let ptt = PttSpec.parse(pttArg)
 
 // Thread de stdin: "state on" / "state off"
 DispatchQueue.global().async {
@@ -43,23 +86,7 @@ if !AXIsProcessTrusted() {
     emit("permission_granted")
 }
 
-let kVK_Space: Int64 = 49
 let kVK_Escape: Int64 = 53
-let kVK_RightCommand: Int64 = 54
-let kVK_RightOption: Int64 = 61
-let kVK_F5: Int64 = 96
-
-let pttKeyCode: Int64 = pttMode == "ropt" ? kVK_RightOption : kVK_RightCommand
-let pttFlag: CGEventFlags = pttMode == "ropt" ? .maskAlternate : .maskCommand
-
-func isToggle(_ keyCode: Int64, _ flags: CGEventFlags) -> Bool {
-    switch toggleMode {
-    case "opt+space": return keyCode == kVK_Space && flags.contains(.maskAlternate)
-    case "ctrl+space": return keyCode == kVK_Space && flags.contains(.maskControl)
-    case "f5": return keyCode == kVK_F5
-    default: return keyCode == kVK_Space && flags.contains(.maskSecondaryFn)
-    }
-}
 
 let mask: CGEventMask =
     (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.flagsChanged.rawValue)
@@ -69,8 +96,8 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
     let flags = event.flags
     let st = State.shared
 
-    if type == .flagsChanged && keyCode == pttKeyCode {
-        if flags.contains(pttFlag) {
+    if type == .flagsChanged && keyCode == ptt.code {
+        if flags.contains(ptt.flag) {
             st.pttDown = true
             st.pttCombo = false
             emit("ptt_down")
@@ -87,7 +114,7 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
         let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
 
         // Toggle: suprime o evento pro sistema não digitar o caractere
-        if isToggle(keyCode, flags) {
+        if toggleSpec.casaCom(keyCode: keyCode, flags: flags) {
             if !isRepeat { emit("toggle") }
             return nil
         }
