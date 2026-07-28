@@ -1,18 +1,50 @@
 # Dita Aí 🎙️
 
-**Ditado por voz no computador inteiro, rodando 100% local.** Você segura um atalho, fala, solta, e o texto cai no campo onde o cursor está: WhatsApp Web, Notion, terminal, prompt do Claude, qualquer lugar. Nada sobe pra nuvem, nada tem mensalidade.
-
-É um clone funcional do Wispr Flow, feito em Electron + whisper.cpp, com transcrição em português.
-
-> No Windows existe também um **motor de transcrição remoto opcional** (Gemini Live, com a sua própria chave gratuita): ele responde em ~440ms em vez de 7 a 10s, mas **envia o seu áudio para o Google**. Vem desligado, o padrão continua sendo o motor local, e dá pra voltar a qualquer momento. Detalhes em [docs/windows.md](docs/windows.md#motor-tempo-real-gemini).
-
-> **Aviso honesto:** este é um projeto de uso interno que abrimos pra comunidade. Ele funciona, mas não é um app de loja: você vai compilar na sua máquina, o app não é assinado, e você precisa liberar permissão no sistema. Se você mexe com terminal, leva 15 minutos. Se nunca abriu um terminal, chame alguém que já abriu.
+**Você aperta um atalho, fala, e o texto aparece onde o cursor está.** WhatsApp Web, Word, e-mail, qualquer campo. Sem mensalidade.
 
 ---
 
-## Escolha sua plataforma
+# ⬇️ Baixar
 
-| Sistema | Atalho | Guia |
+## 🪟 Windows 10 / 11
+
+# **[→ BAIXAR O INSTALADOR](https://github.com/felipefernandees/dita-ai/releases/latest)**
+
+## 🍎 macOS
+
+Ainda não existe instalador pronto para Mac — é preciso compilar. **[Veja como →](macOS/)**
+
+---
+
+> ⚠️ O botão verde **`Code`** lá em cima **não** baixa o aplicativo. Ele baixa o código de programação. Para usar o Dita Aí, use o link acima.
+
+**No Windows, depois de baixar:**
+
+1. Execute o arquivo `.exe`.
+2. Vai aparecer **"O Windows protegeu o seu computador"** → clique em **Mais informações** → **Executar assim mesmo**. É esperado: o instalador não tem certificado pago.
+3. No primeiro ditado o app baixa o modelo de voz (**1,6 GB**). Uma vez só. Depois funciona sem internet.
+4. Aperte **`Ctrl` + `Shift` + `Espaço`**, fale, aperte de novo.
+
+Passo a passo com mais detalhe: **[Windows/](Windows/)** · **[macOS/](macOS/)**
+
+---
+
+<details>
+<summary><b>Detalhes técnicos do projeto</b> (para quem vai mexer no código)</summary>
+
+Clone funcional do Wispr Flow, em Electron + whisper.cpp, com transcrição em português rodando **100% local** — nada sobe pra nuvem.
+
+No Windows existe também um **motor remoto opcional** (Gemini Live, com a sua própria chave gratuita): responde em ~440ms em vez de 7 a 10s, mas **envia o seu áudio para o Google**. Vem desligado, o padrão continua sendo o motor local. Detalhes em [docs/windows.md](docs/windows.md#motor-tempo-real-gemini).
+
+Projeto de uso interno aberto pra comunidade. Funciona, mas não é app de loja: o instalador não é assinado e o sistema pede permissão na primeira vez.
+
+</details>
+
+---
+
+## Documentação por plataforma
+
+| Sistema | Atalho | Guia completo |
 |---|---|---|
 | **macOS** (Apple Silicon) | `Fn+Espaço`, escolhido numa lista fixa | continue lendo abaixo |
 | **Windows 10/11** x64 | `Ctrl+Shift+Espaço` por padrão, mas você grava a combinação que quiser | **[docs/windows.md](docs/windows.md)** |
@@ -131,11 +163,13 @@ Todo push e todo PR disparam o [CI](.github/workflows/ci.yml), que roda em **dua
 
 O que nenhum dos dois cobre: atalho global com tecla física, microfone e colagem na janela em foco. Isso é verificação humana, com roteiro em [docs/verificacao-windows.md](docs/verificacao-windows.md).
 
-**Baixar o instalador do Windows:** quando existir uma release, ela fica em **[Releases](../../releases)** — pegue o `.exe`. Ele é montado pelo [workflow de release](.github/workflows/release.yml) a partir de uma tag `v*`, no próprio GitHub, e já traz os backends `blas` e `cpu` do whisper.cpp. Não traz o backend Vulkan (opcional, compilado localmente com `npm run whisper:vulkan`) nem o modelo de 1,6GB, que é baixado no primeiro uso.
+**O instalador do Windows fica em [Releases](https://github.com/felipefernandees/dita-ai/releases/latest)** (link de download no topo deste README). Ele é montado pelo [workflow de release](.github/workflows/release.yml) a partir de uma tag `v*`, no próprio GitHub, e já traz os backends `blas` e `cpu` do whisper.cpp. Não traz o backend Vulkan (opcional, compilado localmente com `npm run whisper:vulkan`) nem o modelo de 1,6GB, que é baixado no primeiro uso.
+
+Para publicar uma versão nova: `git tag vX.Y.Z && git push origin vX.Y.Z`. Mergear um PR **não** gera instalador — o workflow só dispara em tag.
 
 > **O instalador não é assinado.** O SmartScreen vai barrar a primeira execução: **"Mais informações" → "Executar assim mesmo"**. Assinar exigiria um certificado de code signing comprado de uma CA e guardado como secret do repositório — não temos. Se você prefere não rodar binário não assinado, compile pelo código-fonte: [docs/windows.md](docs/windows.md).
 
-Enquanto não houver release publicada, o caminho é o de sempre: `npm run build:win` na sua máquina.
+Quem prefere compilar em vez de baixar binário pronto: `npm run build:win` na sua máquina, com o passo a passo em [docs/windows.md](docs/windows.md).
 
 ## Contribuindo
 
