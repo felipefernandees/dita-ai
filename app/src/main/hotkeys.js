@@ -24,28 +24,44 @@ export function createHotkeyMachine({ onStart, onStop, onCancel, now = () => Dat
   let state = 'idle' // idle | recording
   let source = null  // toggle | ptt
   let startedAt = 0
+  // Numera cada gravação. Quem sai daqui para fazer trabalho ASSÍNCRONO leva a
+  // época consigo e a compara com `epocaAtual()` antes de aplicar qualquer
+  // efeito — se ela já mudou, aquele ditado acabou (foi cancelado ou concluído)
+  // e o efeito precisa ser descartado.
+  //
+  // Sem isto, encostar no Cmd direito cancelava a máquina enquanto o `onStart`
+  // ainda esperava o `getFrontmostApp()`; o osascript respondia depois e ligava
+  // o popup e o microfone com o estado já em `idle`. Como o X e o check só
+  // agem quando o estado é `recording`, os dois viravam no-op: popup preso na
+  // tela, microfone aberto, e nada além do watchdog de 30 minutos para
+  // derrubar.
+  let epoca = 0
 
   function start(src) {
     state = 'recording'
     source = src
     startedAt = now()
-    onStart()
+    epoca++
+    onStart(epoca)
   }
 
   function finish() {
     state = 'idle'
     source = null
+    epoca++
     onStop()
   }
 
   function cancel(reason) {
     state = 'idle'
     source = null
+    epoca++
     onCancel(reason)
   }
 
   return {
     state: () => state,
+    epocaAtual: () => epoca,
     // acionados pelos botões do popup (check = finalizar, X = cancelar)
     stopExternally() { if (state === 'recording') finish() },
     cancelExternally(reason = 'button') { if (state === 'recording') cancel(reason) },

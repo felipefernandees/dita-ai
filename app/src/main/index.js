@@ -16,7 +16,13 @@ import { lerConfig, salvarChave, limparChave, registrarUso, percentualUso, LIMIT
 import { criarSessao } from './gemini-live.js'
 
 let rec, hotkeys, whisper, tray
-let targetApp = ''
+// Nome do app em foco quando o ditado começou. É uma PROMESSA, não uma string,
+// porque descobri-lo custa um osascript ao System Events (100 a 180ms medidos
+// nesta máquina, sem teto quando ele está ocupado) e o dado só alimenta o
+// histórico — nada no ditado depende dele. Enquanto era aguardado no `onStart`,
+// ele atrasava o popup em TODO ditado e, quando o System Events engasgava,
+// segurava o começo da gravação até depois de o usuário já ter desistido.
+let appEmFoco = Promise.resolve('')
 const dlog = (m) => { if (process.env.DITA_DEBUG) { try { require('fs').appendFileSync(require('path').join(require('os').homedir(), 'dita-debug.log'), new Date().toISOString() + ' ' + m + '\n') } catch {} } }
 
 let recStartedAt = 0
@@ -50,6 +56,7 @@ async function entregarTexto(raw, { seq, wasCancelled }) {
   if (!text) { rec.hideAnimated(); return }
 
   // REGRA DE OURO: salva ANTES de colar
+  const targetApp = await appEmFoco
   const row = saveDictation({ text, rawText: raw, appName: targetApp, durationMs: Date.now() - recStartedAt })
   tray.updateLastTranscript(row.text)
 
@@ -274,13 +281,29 @@ app.whenReady().then(async () => {
   ckpt('whisper')
 
   const machine = createHotkeyMachine({
-    onStart: async () => {
-      targetApp = await getFrontmostApp()
+    // SÍNCRONO DE PROPÓSITO — não coloque `await` aqui dentro.
+    //
+    // Tudo o que o usuário percebe como "o app abriu" mora nas três últimas
+    // linhas. Enquanto o nome do app em foco era aguardado no topo, essas
+    // linhas rodavam 100 a 180ms depois do atalho (medido), e um System Events
+    // ocupado podia adiá-las indefinidamente — era a causa do popup que não
+    // aparecia. Trabalho lento vai para uma promessa aguardada mais tarde
+    // (`appEmFoco`), nunca na frente do `rec.show()`.
+    onStart: (epoca) => {
       recStartedAt = Date.now()
+      appEmFoco = getFrontmostApp().catch(() => '')
       // Sobra do ditado anterior (troca de motor no meio, erro sem fim) não
       // pode continuar consumindo áudio do novo.
       abortarGemini()
       const motor = escolherMotor() === 'gemini' ? abrirSessaoGemini() : 'local'
+
+      // Guarda de época. Nada acima é assíncrono hoje, mas `escolherMotor()` lê
+      // disco e `abrirSessaoGemini()` abre socket: se um dia qualquer um dos
+      // dois ceder e virar assíncrono, esta comparação impede que o popup e o
+      // microfone subam num ditado que o usuário já cancelou — que é
+      // exatamente o bug do toque acidental no Cmd direito.
+      if (epoca !== machine.epocaAtual()) { abortarGemini(); return }
+
       hotkeys.setRecordingState(true)
       rec.show()
       // O payload diz ao renderer se ele deve, além do MediaRecorder de sempre,
@@ -389,6 +412,19 @@ app.whenReady().then(async () => {
     // cancelar e o botão ficava inerte, que era o sintoma relatado.
     abortedSeq = dictationSeq
 
+    // SEGUNDA CAMADA: solta o microfone incondicionalmente.
+    //
+    // A guarda de época já impede o estado que tornava este caminho necessário
+    // (popup gravando com a máquina em 'idle'), mas o X é o botão de emergência
+    // do app — ele não pode depender de o resto estar coerente para funcionar.
+    // Qualquer caminho futuro que deixe o renderer gravando sem a máquina saber
+    // custaria de novo um microfone aberto até o watchdog de 30 minutos.
+    //
+    // Canal próprio, e não o `rec:cancel`: aquele também esconde o popup, o que
+    // engoliria a tarja "Transcrição cancelada" logo abaixo.
+    rec.send('rec:soltar-mic')
+    abortarGemini()
+
     // Mostra a tarja "Transcrição cancelada" em vez de simplesmente sumir: sem
     // ela o popup fecharia sem confirmar nada e o usuário ficaria sem saber se
     // o clique pegou. Os 2s dão tempo de ler e de clicar em Anular, que cola o
@@ -493,7 +529,7 @@ app.whenReady().then(async () => {
       execFileSync('powershell', ['-NoProfile', '-Command', psCommand])
       execFileSync(ffmpegPath(), ['-y', '-i', wav, webm], { stdio: 'ignore' })
     }
-    targetApp = 'SmokeTest'
+    appEmFoco = Promise.resolve('SmokeTest')
     recStartedAt = Date.now() - 3000
     rec.show()
     await processDictation(readFileSync(webm))
