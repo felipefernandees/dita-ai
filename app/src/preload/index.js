@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('dita', {
   onCommand(cb) {
-    for (const ch of ['rec:start', 'rec:stop', 'rec:cancel', 'rec:phase', 'rec:result', 'rec:cancelled', 'rec:closing', 'rt:texto', 'rt:erro']) {
+    for (const ch of ['rec:start', 'rec:stop', 'rec:cancel', 'rec:soltar-mic', 'rec:phase', 'rec:result', 'rec:cancelled', 'rec:closing', 'rt:texto', 'rt:erro']) {
       ipcRenderer.on(ch, (_e, payload) => cb(ch, payload))
     }
   },

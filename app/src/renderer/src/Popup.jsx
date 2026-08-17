@@ -43,12 +43,23 @@ export default function Popup() {
   const [rtErro, setRtErro] = useState('')   // falha do motor remoto, visível em vez de silenciosa
   const canvasRef = useRef(null)
   const mediaRef = useRef({})
+  // Mesma ideia da época do main, do lado de cá. `startRecording` atravessa
+  // três `await` (configurações, getUserMedia, MediaRecorder) e o ditado pode
+  // ser cancelado no meio de qualquer um deles. Sem este número, o
+  // getUserMedia resolveria depois do cancelamento e deixaria um microfone
+  // ABERTO que ninguém mais referencia — o indicador de gravação do macOS fica
+  // aceso e nada no app consegue apagá-lo.
+  const epocaRef = useRef(0)
 
   useEffect(() => {
     window.dita.onCommand(async (ch, payload) => {
       if (ch === 'rec:start') await startRecording(payload)
       if (ch === 'rec:stop') stopRecording(true)
       if (ch === 'rec:cancel') { stopRecording(false); setShown(false) }
+      // Só corta o microfone, sem tocar na visibilidade: o main manda isto
+      // junto com a tarja "Transcrição cancelada", que precisa continuar na
+      // tela. É a rede de segurança do botão X (ver rec:cancel-hard no main).
+      if (ch === 'rec:soltar-mic') soltarMicrofone()
       if (ch === 'rec:phase') setPhase(payload)
       if (ch === 'rec:result') { setResult(payload.text); setPasted(!!payload.pasted); setPhase('done') }
       if (ch === 'rec:cancelled') setPhase('cancelled')
@@ -116,6 +127,9 @@ export default function Popup() {
   }
 
   function releaseMic() {
+    // Avança a época ANTES de desmontar: é isto que faz um `startRecording`
+    // ainda em voo descobrir, ao voltar do await, que o ditado dele já acabou.
+    epocaRef.current++
     const m = mediaRef.current
     // Marca ANTES de desmontar. `iniciarStreaming` é assíncrono (carregar o
     // worklet leva alguns milissegundos) e um ditado curto pode terminar antes
@@ -209,14 +223,55 @@ export default function Popup() {
     }
   }
 
+  // Descarta um stream que chegou tarde demais. Sem isto o microfone fica
+  // aberto sem dono e o ponto laranja do macOS não apaga mais.
+  function descartarStream(stream) {
+    try { stream?.getTracks().forEach((t) => t.stop()) } catch { /* já parado */ }
+  }
+
   async function startRecording(payload) {
     releaseMic()
+    const minhaEpoca = epocaRef.current
     setRtErro('')
-    const settings = await window.dita.getSettings()
-    const audioInput = settings.micDeviceId ? { deviceId: { exact: settings.micDeviceId } } : true
+
+    // A PÍLULA APARECE ANTES DO MICROFONE ABRIR, E ISSO É DE PROPÓSITO.
+    //
+    // O popup é a única confirmação de que o atalho pegou. Enquanto ele só
+    // pintava depois do `await getUserMedia`, o usuário apertava, começava a
+    // falar e via a tela vazia — e o relato virava "não aparece o popup de
+    // gravação". A janela já estava lá, transparente, esperando o microfone.
+    //
+    // O equalizador não sofre com a inversão: o loop de desenho desiste sozinho
+    // enquanto `analyser` não existir e volta quando `session` muda, logo
+    // abaixo. Nos primeiros milissegundos a pílula aparece com as barras
+    // paradas, que é a leitura honesta do que está acontecendo.
+    setPhase('recording')
+    setShown(true)
+
     let stream
-    try { stream = await navigator.mediaDevices.getUserMedia({ audio: audioInput }) }
-    catch { stream = await navigator.mediaDevices.getUserMedia({ audio: true }) }
+    try {
+      const settings = await window.dita.getSettings()
+      const audioInput = settings.micDeviceId ? { deviceId: { exact: settings.micDeviceId } } : true
+      try { stream = await navigator.mediaDevices.getUserMedia({ audio: audioInput }) }
+      // O microfone escolhido nas configurações pode ter sido desconectado
+      // (fone bluetooth que saiu do ar). Cair no dispositivo padrão é melhor do
+      // que não gravar — mas se NEM ele existir, a falha precisa aparecer na
+      // tela: antes esta segunda tentativa não tinha catch nenhum e a exceção
+      // deixava o popup pendurado, sem gravar e sem dizer por quê.
+      catch { stream = await navigator.mediaDevices.getUserMedia({ audio: true }) }
+    } catch (err) {
+      console.error('microfone indisponível:', err)
+      if (minhaEpoca !== epocaRef.current) return
+      setRtErro('Microfone indisponível. Verifique as permissões.')
+      setPhase('error')
+      return
+    }
+
+    // O ditado foi cancelado enquanto o microfone abria (o toque acidental no
+    // Cmd direito cabe folgado aqui). O stream que acabou de chegar não tem
+    // mais dono: fechar agora, ou ele vaza.
+    if (minhaEpoca !== epocaRef.current) { descartarStream(stream); return }
+
     const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
     const chunks = []
     recorder.ondataavailable = (e) => chunks.push(e.data)
@@ -238,9 +293,11 @@ export default function Popup() {
     // fora. O Felipe fala 3+ minutos direto: o limite não pode cortar ele.
     const watchdog = setTimeout(() => window.dita.finish(), 30 * 60000)
     mediaRef.current = { recorder, stream, analyser, audioCtx, watchdog, keep: false, encerrado: false }
+    // A fase já é 'recording' desde o topo; este `session` é o que RE-ARMA o
+    // loop do equalizador agora que o `analyser` finalmente existe. Sem ele o
+    // efeito de desenho teria desistido lá em cima e as barras ficariam
+    // paradas o ditado inteiro.
     setSession((n) => n + 1)
-    setPhase('recording')
-    requestAnimationFrame(() => setShown(true))
     // O MediaRecorder acima continua rodando no ditado remoto, de propósito: o
     // main guarda esse webm e o joga no whisper local se o Gemini não devolver
     // texto nenhum. É a rede de segurança — o streaming é um extra por cima
@@ -249,10 +306,18 @@ export default function Popup() {
     if (payload?.engine === 'gemini') iniciarStreaming(stream)
   }
 
-  function stopRecording(keep) {
+  // Fecha o MediaRecorder e devolve o microfone ao sistema. `keep` decide se o
+  // áudio gravado ainda vira transcrição (onstop lê essa bandeira) ou é
+  // descartado. Separado de stopRecording porque o botão X precisa do corte do
+  // microfone SEM as mudanças de fase que vêm junto.
+  function soltarMicrofone(keep = false) {
     const m = mediaRef.current
     if (m.recorder && m.recorder.state !== 'inactive') { m.keep = keep; m.recorder.stop() }
     else releaseMic()
+  }
+
+  function stopRecording(keep) {
+    soltarMicrofone(keep)
     if (keep) setPhase('processing')
     else if (phase === 'recording') setPhase('idle')
   }
