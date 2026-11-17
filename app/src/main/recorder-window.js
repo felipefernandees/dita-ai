@@ -10,15 +10,21 @@ function keepOnAllWorkspaces(win) {
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true })
 }
 
-// Tamanhos fixos, clonados do Wispr Flow (sem personalização)
+// A janela da pílula tem tamanho FIXO e fica sempre na tela, igual ao Wispr
+// Flow: parada ela mostra a pílula pequena (40x8), e quem muda de tamanho é a
+// pílula, por CSS, dentro desta área transparente. A área sobra em cima para
+// a dica que aparece com o mouse e para a tarja de cancelado. O resto da
+// janela deixa o clique passar (setIgnoreMouseEvents com forward), e só a
+// pílula liga o mouse quando o ponteiro entra nela.
+// Uma área só, fixa, onde cabe tudo: a pílula, a dica, a tarja de cancelado
+// e o cartão de "sem campo" (até 440 px, como o do Wispr). O cartão nasce da
+// própria pílula esticando por CSS, então a janela não muda de tamanho nunca.
 const SIZE = {
-  rec: { w: 214, h: 40 },      // pílula de gravação
-  result: { w: 432, h: 188 },  // card "sem campo focado" + Copiar Ditado
-  toast: { w: 264, h: 44 }     // tarja "Transcrição cancelada / Anular"
+  rec: { w: 470, h: 250 }
 }
-const MARGIN_BOTTOM = 46
+const MARGIN_BOTTOM = 2
 
-export function createRecorderWindow() {
+export function createRecorderWindow({ mostrarParada = () => true } = {}) {
   const win = new BrowserWindow({
     width: SIZE.rec.w, height: SIZE.rec.h,
     frame: false, transparent: true, alwaysOnTop: true,
@@ -70,11 +76,23 @@ export function createRecorderWindow() {
     win.webContents.on('render-process-gone', (_e, d) => console.log('RENDERER GONE:', JSON.stringify(d)))
   }
 
-  let tween = null
   let guard = null
+  let telaAtual = null
+  let repousando = false
+
+  // Por padrão a janela inteira é "vidro": o clique passa para o app de baixo.
+  // forward:true continua entregando o movimento do mouse ao renderer, que é
+  // como ele percebe o ponteiro entrando na pílula e pede o mouse de volta.
+  function vidro(on) {
+    if (win.isDestroyed()) return
+    win.setIgnoreMouseEvents(on, on ? { forward: true } : undefined)
+  }
+  vidro(true)
 
   function place(w, h) {
-    const { workArea } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+    const tela = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+    telaAtual = tela.id
+    const { workArea } = tela
     win.setBounds({
       x: Math.round(workArea.x + workArea.width / 2 - w / 2),
       y: Math.round(workArea.y + workArea.height - h - MARGIN_BOTTOM),
@@ -82,21 +100,11 @@ export function createRecorderWindow() {
     })
   }
 
-  function tweenTo(w, h) {
-    if (tween) { clearInterval(tween); tween = null }
-    const b = win.getBounds()
-    if (b.width === w && b.height === h) return
-    const sw = b.width, sh = b.height
-    const t0 = Date.now(), dur = 150
-    tween = setInterval(() => {
-      const p = Math.min(1, (Date.now() - t0) / dur)
-      const e = 1 - Math.pow(1 - p, 3)
-      place(Math.round(sw + (w - sw) * e), Math.round(sh + (h - sh) * e))
-      if (p >= 1) { clearInterval(tween); tween = null }
-    }, 10)
-  }
 
-  function startGuard() {
+
+  // Mantém a pílula por cima de tudo e, parada, acompanha a tela onde está o
+  // mouse (no Wispr ela aparece no monitor em que você está trabalhando).
+  function startGuard(ms = 500) {
     if (guard) clearInterval(guard)
     guard = setInterval(() => {
       if (win.isDestroyed()) return
@@ -104,29 +112,59 @@ export function createRecorderWindow() {
       keepOnAllWorkspaces(win)
       if (!win.isVisible()) win.showInactive()
       win.moveTop()
-    }, 500)
+      if (repousando) {
+        const tela = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+        if (tela.id !== telaAtual) place(SIZE.rec.w, SIZE.rec.h)
+      }
+    }, ms)
   }
-  function stopGuard() { if (guard) { clearInterval(guard); guard = null } }
+
+  // Volta para a pílula parada, sem esconder a janela.
+  function descansar() {
+    if (win.isDestroyed()) return
+    repousando = true
+    place(SIZE.rec.w, SIZE.rec.h)
+    vidro(true)
+    win.webContents.send('rec:repouso')
+    // "Mostrar a pílula o tempo todo" desligado (o "Show Flow Bar at all
+    // times" do Wispr): parada ela some, e volta só no próximo ditado.
+    if (!mostrarParada()) {
+      if (guard) { clearInterval(guard); guard = null }
+      win.hide()
+      return
+    }
+    win.setAlwaysOnTop(true, 'screen-saver')
+    win.showInactive()
+    startGuard(1000)
+  }
 
   if (process.env['ELECTRON_RENDERER_URL']) win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   else win.loadFile(join(__dirname, '../renderer/index.html'))
+  // A pílula parada aparece assim que o app abre, como no Wispr.
+  win.webContents.once('did-finish-load', () => descansar())
 
   return {
     win,
     show() {
-      if (tween) { clearInterval(tween); tween = null }
+      repousando = false
       place(SIZE.rec.w, SIZE.rec.h)
       win.setAlwaysOnTop(true, 'screen-saver')
       win.showInactive()
-      startGuard()
+      startGuard(500)
     },
-    expandResult() { tweenTo(SIZE.result.w, SIZE.result.h) },
-    toast() { tweenTo(SIZE.toast.w, SIZE.toast.h) },
-    hide() { stopGuard(); win.hide() },
+    // O cartão "sem campo" cabe na mesma área; o clique liga quando o mouse
+    // entra nele (mouseDentro), como na pílula.
+    expandResult() { repousando = false },
+    // A tarja de cancelado cabe na área da pílula; só precisa do clique (Anular).
+    toast() { repousando = false },
+    // O renderer avisa quando o ponteiro entra ou sai da pílula.
+    mouseDentro(dentro) { vidro(!dentro) },
+    hide() { descansar() },
+    // O ajuste mudou: aplica já se ela estiver parada.
+    aplicarParada() { if (repousando) descansar() },
     hideAnimated() {
-      if (!win.isVisible()) { stopGuard(); return }
       win.webContents.send('rec:closing')
-      setTimeout(() => { if (!win.isDestroyed()) { stopGuard(); win.hide() } }, 130)
+      setTimeout(() => descansar(), 130)
     },
     send(channel, ...args) { win.webContents.send(channel, ...args) }
   }

@@ -13,7 +13,12 @@ import { Readable } from 'stream'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const OUT = join(HERE, '../resources/win/whisper')
 const TMP = join(HERE, '../.tmp-whisper')
-const API = 'https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest'
+// Versão FIXA, a mesma do build do Mac (TAG em build-whisper-mac.mjs). Era
+// `releases/latest`, até o whisper.cpp passar a publicar as versões numeradas
+// sem binário nenhum (v1.9.3 em diante, visto em 2026-11-17): o CI do Windows
+// quebrou sem nenhuma mudança nossa. Subir de versão é decisão, não acaso.
+const TAG = 'v1.9.1'
+const API = `https://api.github.com/repos/ggml-org/whisper.cpp/releases/tags/${TAG}`
 
 // A ordem aqui espelha whisperServerCandidates() em src/main/binaries.js:
 // a primeira pasta que existir é a primeira tentativa de subir o servidor.

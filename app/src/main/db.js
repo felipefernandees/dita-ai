@@ -136,3 +136,43 @@ export function listDictionary() {
 export function listSnippets() {
   return db.prepare('SELECT * FROM snippets ORDER BY id').all()
 }
+
+export function addDictionaryWord(term, replacement = null) {
+  const t = String(term || '').trim()
+  if (!t) return null
+  const r = replacement == null ? null : String(replacement).trim() || null
+  const info = db.prepare('INSERT INTO dictionary (term, replacement) VALUES (?, ?)').run(t, r)
+  return db.prepare('SELECT * FROM dictionary WHERE id = ?').get(info.lastInsertRowid)
+}
+
+export function removeDictionaryWord(id) {
+  db.prepare('DELETE FROM dictionary WHERE id = ?').run(Number(id))
+}
+
+export function deleteDictation(id) {
+  db.prepare('DELETE FROM history WHERE id = ?').run(Number(id))
+}
+
+// Números da tela de Início, no estilo do Wispr: palavras ditadas no total,
+// velocidade média (palavras por minuto) e dias seguidos com ditado até hoje
+// (ou até ontem, pra sequência não "quebrar" antes da primeira fala do dia).
+export function estatisticas(hoje = new Date()) {
+  const tot = db.prepare('SELECT COALESCE(SUM(words), 0) AS palavras, COUNT(*) AS ditados FROM history').get()
+  const vel = db.prepare('SELECT AVG(ppm) AS ppm FROM history WHERE ppm > 0 AND ppm < 400 AND words >= 5').get()
+  const dias = new Set(db.prepare("SELECT DISTINCT substr(created_at, 1, 10) AS d FROM history").all().map((r) => r.d))
+  return { palavras: tot.palavras, ditados: tot.ditados, ppm: Math.round(vel.ppm || 0), diasSeguidos: sequencia(dias, hoje) }
+}
+
+export function sequencia(dias, hoje = new Date()) {
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const d = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate())
+  if (!dias.has(iso(d))) d.setDate(d.getDate() - 1)
+  let n = 0
+  while (dias.has(iso(d))) { n++; d.setDate(d.getDate() - 1) }
+  return n
+}
+
+
+export function clearHistory() {
+  db.prepare('DELETE FROM history').run()
+}

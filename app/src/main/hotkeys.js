@@ -1,13 +1,13 @@
 import { spawn } from 'child_process'
-import { appendFileSync } from 'fs'
-import { homedir } from 'os'
-import { join } from 'path'
 
-const DEBUG = !!process.env.DITA_DEBUG
-const LOG = join(homedir(), 'dita-debug.log')
-function dlog(m) { if (DEBUG) { try { appendFileSync(LOG, new Date().toISOString() + ' ' + m + '\n') } catch {} } }
+import { dlog } from './log.js'
 
-const MIN_PTT_MS = 300
+// Janela de decisão do Wispr Flow (DICTATION_DEBOUNCE_DELAY no código dele).
+// Tudo o que diferencia "segurar", "toque duplo" e "toque triplo" sai deste
+// número só, e ele é o mesmo nas três decisões de propósito: a sensação de
+// "é igual ao Wispr" depende de os três tempos baterem com o que a mão já
+// aprendeu lá.
+export const DEBOUNCE_MS = 500
 
 // Espera antes de cada nova tentativa de subir o helper. Cresce para não
 // martelar um binário que está falhando por motivo permanente (arquivo ausente,
@@ -20,65 +20,151 @@ const BACKOFF_MS = [250, 500, 1000, 2000, 4000]
 // desistiria de vez sem nunca ter tido um problema real.
 const ESTAVEL_MS = 30000
 
-export function createHotkeyMachine({ onStart, onStop, onCancel, now = () => Date.now() }) {
-  let state = 'idle' // idle | recording
-  let source = null  // toggle | ptt
-  let startedAt = 0
+// A máquina de estados do ditado, no comportamento do Wispr Flow:
+//
+//   Fn segurada por 500 ms ou mais e solta  → encerra e processa
+//   Fn tocada rápido (menos de 500 ms)      → espera 500 ms por um 2º toque
+//       2º toque chegou                     → TRAVA em mãos livres
+//       não chegou                          → descarta, sem colar nada
+//   travado + novo toque                    → encerra e processa
+//   travado + toque em menos de 500 ms      → cancela (é o toque triplo)
+//   Fn + Espaço                             → trava direto (de parado ou segurando)
+//   Esc                                     → cancela
+//
+// O helper só relata o que a tecla fez (ptt_down, ptt_up, ptt_abort, toggle,
+// esc). Decidir o que aquilo SIGNIFICA mora aqui, num lugar só e testável sem
+// teclado: `agendar`/`desagendar` e `now` são injetáveis.
+export function createHotkeyMachine({
+  onStart,
+  onStop,
+  onCancel,
+  onModo = () => {},
+  now = () => Date.now(),
+  agendar = setTimeout,
+  desagendar = clearTimeout
+}) {
+  let state = 'idle'   // idle | recording
+  let fase = null      // segurando | esperandoSegundo | travado
+  let pttDesde = 0
+  let travadoEm = 0
+  let timer = null
+  // O toque que travou ainda vai soltar a tecla: esse ptt_up não é um pedido.
+  let ignorarProximoUp = false
+  // Fn+Espaço chega como ptt_down, toggle e ptt_abort. Quando o ptt_down já
+  // resolveu (encerrou o ditado travado), o toggle que vem colado nele não
+  // pode abrir um ditado novo.
+  let ignorarToggleAteSoltar = false
+  // Em mãos livres a tecla de falar encerra o ditado, mas só num toque LIMPO:
+  // apertou e soltou sem outra tecla no meio. Visto em 2026-11-17 com o ⌘
+  // direito: o Felipe tirou um print (⌘⇧4) no meio do ditado e o ⌘ do atalho
+  // encerrou tudo. Por isso a decisão espera o ptt_up; um ptt_abort (houve
+  // outra tecla junto) mantém o ditado aberto.
+  let encerrarNoUp = false
+  let downTravadoEm = 0
   // Numera cada gravação. Quem sai daqui para fazer trabalho ASSÍNCRONO leva a
   // época consigo e a compara com `epocaAtual()` antes de aplicar qualquer
-  // efeito — se ela já mudou, aquele ditado acabou (foi cancelado ou concluído)
-  // e o efeito precisa ser descartado.
-  //
-  // Sem isto, encostar no Cmd direito cancelava a máquina enquanto o `onStart`
-  // ainda esperava o `getFrontmostApp()`; o osascript respondia depois e ligava
-  // o popup e o microfone com o estado já em `idle`. Como o X e o check só
-  // agem quando o estado é `recording`, os dois viravam no-op: popup preso na
-  // tela, microfone aberto, e nada além do watchdog de 30 minutos para
-  // derrubar.
+  // efeito: se ela já mudou, aquele ditado acabou e o efeito é descartado.
+  // Sem isto um toque curto cancelava a máquina enquanto o `onStart` ainda
+  // esperava resposta, e o popup subia num ditado que já não existia.
   let epoca = 0
 
-  function start(src) {
+  function limparTimer() { if (timer) { desagendar(timer); timer = null } }
+
+  function start(modo) {
+    encerrarNoUp = false
     state = 'recording'
-    source = src
-    startedAt = now()
+    fase = modo === 'travado' ? 'travado' : 'segurando'
+    pttDesde = now()
+    travadoEm = pttDesde
+    ignorarProximoUp = false
     epoca++
-    onStart(epoca)
+    onStart(epoca, modo)
+  }
+
+  function travar() {
+    limparTimer()
+    fase = 'travado'
+    travadoEm = now()
+    onModo('travado')
   }
 
   function finish() {
+    limparTimer()
     state = 'idle'
-    source = null
+    fase = null
     epoca++
     onStop()
   }
 
   function cancel(reason) {
+    limparTimer()
     state = 'idle'
-    source = null
+    fase = null
     epoca++
     onCancel(reason)
   }
 
   return {
     state: () => state,
+    modo: () => (fase === 'travado' ? 'travado' : 'ptt'),
     epocaAtual: () => epoca,
-    // acionados pelos botões do popup (check = finalizar, X = cancelar)
+    // acionados pelos botões da pílula (parar = finalizar, X = cancelar)
     stopExternally() { if (state === 'recording') finish() },
     cancelExternally(reason = 'button') { if (state === 'recording') cancel(reason) },
     handle(event) {
-      if (event === 'toggle') {
-        if (state === 'idle') start('toggle')
-        else finish()
-      } else if (event === 'ptt_down') {
-        if (state === 'idle') start('ptt')
-      } else if (event === 'ptt_up') {
-        if (state === 'recording' && source === 'ptt') {
-          if (now() - startedAt < MIN_PTT_MS) cancel('short')
-          else finish()
+      if (event === 'ptt_down') {
+        if (state === 'idle') { start('ptt'); return }
+        if (fase === 'esperandoSegundo') { travar(); ignorarProximoUp = true; return }
+        if (fase === 'travado') {
+          ignorarToggleAteSoltar = true
+          ignorarProximoUp = false
+          encerrarNoUp = true
+          downTravadoEm = now()
         }
-      } else if (event === 'ptt_abort') {
-        if (state === 'recording' && source === 'ptt') cancel('abort')
-      } else if (event === 'esc') {
+        return
+      }
+      if (event === 'ptt_up' || event === 'ptt_abort') {
+        ignorarToggleAteSoltar = false
+        if (state !== 'recording') return
+        if (encerrarNoUp) {
+          encerrarNoUp = false
+          if (event === 'ptt_abort') return // era um atalho (⌘⇧4, ⌘C): segue ditando
+          if (downTravadoEm - travadoEm < DEBOUNCE_MS) cancel('triplo')
+          else finish()
+          return
+        }
+        if (ignorarProximoUp) { ignorarProximoUp = false; return }
+        if (fase !== 'segurando') return
+        // Atalho com a tecla de falar (⌘C, ⌘⇧4). Logo no começo é atalho mesmo
+        // e descarta; depois de 500 ms segurando, a pessoa já estava ditando e
+        // a fala não pode se perder: encerra e cola como num soltar normal.
+        if (event === 'ptt_abort') {
+          if (now() - pttDesde >= DEBOUNCE_MS) finish()
+          else cancel('abort')
+          return
+        }
+        if (now() - pttDesde >= DEBOUNCE_MS) { finish(); return }
+        // Toque curto: o ditado continua aberto esperando o segundo toque.
+        // Sem ele, é toque acidental e nada é colado.
+        fase = 'esperandoSegundo'
+        const minhaEpoca = epoca
+        timer = agendar(() => {
+          timer = null
+          if (epoca === minhaEpoca && fase === 'esperandoSegundo') cancel('short')
+        }, DEBOUNCE_MS)
+        return
+      }
+      if (event === 'toggle') {
+        // Fn+Espaço em mãos livres com a Fn sendo a tecla de falar: chega
+        // ptt_down e toggle juntos, e o toggle é quem encerra.
+        if (encerrarNoUp) { encerrarNoUp = false; finish(); return }
+        if (ignorarToggleAteSoltar) return
+        if (state === 'idle') { start('travado'); return }
+        if (fase === 'segurando' || fase === 'esperandoSegundo') { travar(); ignorarProximoUp = true; return }
+        finish()
+        return
+      }
+      if (event === 'esc') {
         if (state === 'recording') cancel('esc')
       }
     }

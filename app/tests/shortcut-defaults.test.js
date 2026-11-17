@@ -31,10 +31,10 @@ describe('defaults de atalho', () => {
     expect(DEFAULT_PTT).not.toBe('ralt')
   })
 
-  it('mantém fn+space e rcmd como default no macOS', async () => {
+  it('usa fn+space e a Fn segurada como default no macOS (igual ao Wispr)', async () => {
     const { DEFAULT_TOGGLE, DEFAULT_PTT } = await loadDefaultsFor('darwin')
     expect(DEFAULT_TOGGLE).toBe('fn+space')
-    expect(DEFAULT_PTT).toBe('rcmd')
+    expect(DEFAULT_PTT).toBe('fn')
   })
 
   // TOGGLE_OPTIONS/PTT_OPTIONS saíram do defaults.js: no Windows o atalho
