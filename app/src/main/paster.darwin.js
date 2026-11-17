@@ -1,5 +1,6 @@
 import { clipboard } from 'electron'
-import { execFile } from 'child_process'
+import { execFile, spawn } from 'child_process'
+import { helperPath } from './helper-path.js'
 
 // POR QUE ESTAS CHAMADAS PRECISAM DE PRAZO
 //
@@ -46,7 +47,45 @@ export async function getFrontmostApp() {
   } catch { return '' }
 }
 
+// Colagem pelo helper nativo (`dita-hotkeys colar`): o texto vai pelo stdin,
+// o helper põe no clipboard, manda Cmd+V direto pro sistema e depois devolve o
+// clipboard ORIGINAL inteiro (imagem, arquivo, rich text). Pelo osascript eram
+// 100 a 180 ms só pra falar com o System Events, e a restauração era só de
+// texto puro: quem tinha copiado uma imagem perdia a imagem.
+//
+// Resolve true quando o helper confirma o Cmd+V, false em qualquer falha, e
+// nunca espera a restauração (o helper sai sozinho depois dela).
+const LIMITE_HELPER_MS = 1500
+
+export function colarViaHelper(text, { binario = helperPath(), spawnFn = spawn, limite = LIMITE_HELPER_MS } = {}) {
+  return new Promise((resolve) => {
+    let feito = false
+    let saida = ''
+    const fim = (ok) => { if (!feito) { feito = true; clearTimeout(timer); resolve(ok) } }
+    let filho
+    try {
+      filho = spawnFn(binario, ['colar'], { stdio: ['pipe', 'pipe', 'ignore'] })
+    } catch { resolve(false); return }
+    const timer = setTimeout(() => { try { filho.kill('SIGKILL') } catch {} ; fim(false) }, limite)
+    filho.stdout?.on('data', (c) => {
+      saida += c.toString()
+      if (saida.includes('"colado"')) fim(true)
+      else if (saida.includes('"erro"')) fim(false)
+    })
+    filho.on('error', () => fim(false))
+    filho.on('close', () => fim(false))
+    try { filho.stdin.end(text) } catch { fim(false) }
+  })
+}
+
 export async function pasteText(text) {
+  // DITA_OSASCRIPT é a porta dos testes para o caminho antigo; sem ela, o
+  // helper nativo vem primeiro e o osascript fica de reserva.
+  if (!process.env.DITA_OSASCRIPT && await colarViaHelper(text)) return true
+  return pasteViaOsascript(text)
+}
+
+async function pasteViaOsascript(text) {
   const previous = clipboard.readText()
   clipboard.writeText(text)
   try {

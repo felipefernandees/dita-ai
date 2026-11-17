@@ -1,0 +1,99 @@
+/* Paleta e tipografia no padrão do Wispr Flow (2026-11-17).
+ *
+ * Os valores saíram dos tokens de cor do app do Wispr (famílias sand e vast):
+ * creme quase branco e quase preto quentes, sem cor saturada. As fontes são as
+ * mesmas que ele usa e são livres (Google Fonts, licença OFL), instaladas pelos
+ * pacotes @fontsource-variable: Figtree no texto e EB Garamond nos títulos.
+ *
+ * O tema segue o do sistema, como o Wispr: claro por padrão, escuro quando o
+ * macOS está no modo escuro. A pílula de ditado é preta nos dois temas.
+ */
+:root {
+  --sand-50: #fcfcfb;
+  --sand-100: #faf9f7;
+  --sand-500: #f5f4f0;
+  --sand-600: #eeebe3;
+  --sand-700: #c5c0b3;
+  --vast-50: #e9e8e1;
+  --vast-100: #deddd7;
+  --vast-300: #b3b2ad;
+  --vast-400: #9d9c98;
+  --vast-500: #878683;
+  --vast-600: #71716e;
+  --vast-800: #464544;
+  --vast-900: #30302f;
+  --vast-925: #202020;
+  --vast-950: #1a1a1a;
+  --lumen: #ffffeb;
+  --vermelho: #ff5757;
+
+  --fonte: 'Figtree Variable', Figtree, ui-sans-serif, system-ui, sans-serif;
+  --fonte-titulo: 'EB Garamond Variable', 'EB Garamond', Georgia, serif;
+
+  /* claro */
+  --fundo: var(--sand-500);
+  --painel: var(--sand-50);
+  --cartao: #ffffff;
+  --campo: var(--sand-600);
+  --borda: var(--sand-600);
+  --texto: var(--vast-950);
+  --texto-apoio: var(--vast-600);
+  --primaria: var(--vast-950);
+  --primaria-texto: var(--sand-50);
+  --bolinha: #ffffff;
+  --alerta: #b91c1c;
+
+  /* Tokens semânticos do Wispr Flow, usados no painel de Ajustes (lidos do
+     CSS do app deles em 2026-11-17, mesmos nomes sem o prefixo w-). */
+  --sand-950: #4d4a42;
+  --vast-700: #5b5b59;
+  --w-bg: var(--sand-50);
+  --w-bg2: var(--sand-600);
+  --w-bg3: var(--sand-500);
+  --w-fg: var(--vast-950);
+  --w-fg2: var(--vast-950);
+  --w-fg3: var(--vast-600);
+  --w-borda: var(--sand-600);
+  --w-branco: #ffffff;
+  --w-n500: var(--sand-950);
+  --w-n600: var(--vast-900);
+  --w-primaria: var(--vast-950);
+  --w-primaria-texto: var(--sand-50);
+  --w-switch: var(--sand-700);
+  --w-veu: rgba(26, 26, 26, 0.3);
+  --w-sombra-xl: 0 20px 25px -5px rgb(26 26 26 / 0.1), 0 8px 10px -6px rgb(26 26 26 / 0.1);
+  --w-mola: linear(0, 0.005, 0.019 1.8%, 0.079 3.9%, 0.476 13.5%, 0.663 19.1%, 0.738 22%, 0.8 25.1%, 0.852 28.4%, 0.894 32%, 0.928 36%, 0.953 40.5%, 0.972 45.6%, 0.985 51.6%, 0.997 67.3%, 1);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fundo: var(--vast-925);
+    --painel: var(--vast-950);
+    --cartao: #000000;
+    --campo: var(--vast-900);
+    --borda: var(--vast-900);
+    --texto: var(--vast-50);
+    --texto-apoio: var(--vast-400);
+    --primaria: var(--sand-50);
+    --primaria-texto: var(--vast-950);
+    --bolinha: var(--vast-50);
+    --alerta: #fca5a5;
+    --w-bg: var(--vast-950);
+    --w-bg2: var(--vast-900);
+    --w-bg3: var(--vast-925);
+    --w-fg: var(--vast-50);
+    --w-fg2: var(--vast-100);
+    --w-fg3: var(--vast-400);
+    --w-borda: var(--vast-900);
+    --w-branco: var(--vast-950);
+    --w-n500: var(--vast-400);
+    --w-n600: var(--vast-100);
+    --w-primaria: var(--sand-50);
+    --w-primaria-texto: var(--vast-950);
+    --w-switch: var(--vast-700);
+    --w-veu: rgba(0, 0, 0, 0.55);
+    --w-sombra-xl: 0 6px 12px -3px rgb(0 0 0 / 0.5), 0 2px 4px 0 rgb(0 0 0 / 0.32);
+    color-scheme: dark;
+  }
+}

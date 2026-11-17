@@ -29,7 +29,7 @@ describe('época da gravação', () => {
   it('onStart recebe a época da gravação que o disparou', () => {
     const { m, cbs } = makeMachine([0, 2000])
     m.handle('toggle')
-    expect(cbs.onStart).toHaveBeenCalledWith(m.epocaAtual())
+    expect(cbs.onStart).toHaveBeenCalledWith(m.epocaAtual(), 'travado')
   })
 
   it('a época muda a cada gravação nova', () => {
@@ -45,7 +45,7 @@ describe('época da gravação', () => {
     const { m } = makeMachine([0, 150])
     m.handle('ptt_down')
     const epocaDoDitado = m.epocaAtual()
-    m.handle('ptt_up') // < 300ms: cancela por toque acidental
+    m.handle('esc') // cancelado antes de o onStart terminar
     expect(m.state()).toBe('idle')
     expect(m.epocaAtual()).not.toBe(epocaDoDitado)
   })
@@ -79,12 +79,12 @@ describe('época da gravação', () => {
 
     m.handle('ptt_down')
     agora = 150
-    m.handle('ptt_up')
+    m.handle('esc')
 
     soltarOsascript('Chrome')
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(efeitos).toEqual(['cancel:short'])
+    expect(efeitos).toEqual(['cancel:esc'])
     expect(m.state()).toBe('idle')
   })
 })

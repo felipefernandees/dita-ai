@@ -51,6 +51,32 @@ function comoListaNumerada(text) {
   return intro ? `${intro}\n\n${lista}` : lista
 }
 
+// Atalho de texto: a fala INTEIRA é o gatilho ("meu email" vira o endereço).
+// Devolve o conteúdo ou null. Compara sem pontuação final nem caixa, porque o
+// transcritor às vezes fecha a frase com ponto.
+export function acharSnippet(texto, snippets = []) {
+  const normalizado = String(texto || '').toLowerCase().replace(/[.!?,;]+$/, '').trim()
+  for (const s of snippets) {
+    if (normalizado === s.trigger.toLowerCase().trim()) return s.content
+  }
+  return null
+}
+
+// Troca termo por grafia preferida, só em palavra inteira e sem olhar caixa.
+// Roda também DEPOIS da limpeza por IA: o dicionário vai no prompt, mas a
+// troca determinística garante a grafia mesmo quando o modelo escorrega.
+export function aplicarDicionario(texto, dicionario = []) {
+  let t = String(texto || '')
+  for (const d of dicionario) {
+    if (!d.replacement) continue
+    const re = new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(d.term)}(?=$|[^\\p{L}\\p{N}])`, 'giu')
+    t = t.replace(re, (m, pre) => pre + d.replacement)
+  }
+  // Colapsa só espaço horizontal: a limpeza por IA pode trazer lista com
+  // quebra de linha, e ela tem que sobreviver.
+  return t.replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').trim()
+}
+
 export function polish(rawText, { dictionary = [], snippets = [] } = {}) {
   let text = String(rawText || '').replace(AUDIO_MARKERS, ' ')
   // reticências que o whisper insere em silêncio: remove "...", "…" e afins
@@ -60,18 +86,10 @@ export function polish(rawText, { dictionary = [], snippets = [] } = {}) {
   if (/^[\s\p{P}\p{S}]*$/u.test(text)) return ''
   if (!text) return ''
 
-  const normalized = text.toLowerCase().replace(/[.!?,;]+$/, '').trim()
-  for (const s of snippets) {
-    if (normalized === s.trigger.toLowerCase().trim()) return s.content
-  }
+  const snippet = acharSnippet(text, snippets)
+  if (snippet !== null) return snippet
 
-  for (const d of dictionary) {
-    if (!d.replacement) continue
-    const re = new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(d.term)}(?=$|[^\\p{L}\\p{N}])`, 'giu')
-    text = text.replace(re, (m, pre) => pre + d.replacement)
-  }
-
-  text = text.replace(/\s+/g, ' ').trim()
+  text = aplicarDicionario(text, dictionary)
 
   // comando de voz explícito ganha da detecção automática
   if (CMD_TOPICOS.test(text)) {

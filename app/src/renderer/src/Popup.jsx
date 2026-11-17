@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { TAXA_ALVO, amostrasPorChunk, blocoParaPcm16, taxaUtilizavel } from './pcm'
+import { rotuloPttCurto } from './atalhos'
 // `?url` faz o Vite tratar o worklet como ASSET, não como módulo do bundle: ele
 // sai como arquivo próprio em out/renderer/assets e esta variável vira o
 // caminho dele. É o único jeito que funciona nos dois mundos — em dev o Vite
@@ -9,13 +10,61 @@ import { TAXA_ALVO, amostrasPorChunk, blocoParaPcm16, taxaUtilizavel } from './p
 // isso; um `addModule` apontando para o próprio bundle explode em runtime.
 import urlWorklet from './pcm-worklet.js?url'
 
-// Paleta clonada do Wispr Flow (near-black / branco / cinza)
-const BG = '#1a1a1c'
-const WHITE = '#f5f5f7'
-const GRAY = '#8e8e93'
-const BTN = '#48484a'
-const XBG = 'rgba(255,255,255,0.14)'
-const ALERTA = '#ff9f9f'
+// Pílula no padrão do Wispr Flow, medida no CSS do app dele (2026-11-17):
+// preto puro, borda vast-900, raio 22,5, transição de 100 ms na curva
+// cubic-bezier(0.05, 0.6, 0.4, 0.95). Os tamanhos de cada estado estão em
+// TAMANHO, logo abaixo. A pílula é preta nos dois temas do sistema.
+const PRETO = '#000000'
+const BORDA = '#30302f'      // vast-900
+const TEXTO = '#fcfcfb'      // sand-50
+const APOIO = '#9d9c98'      // vast-400
+const LUMEN = '#ffffeb'      // botão principal sobre o preto
+const ALERTA = '#ff5757'     // red-450
+const FONTE = "'Figtree Variable', Figtree, ui-sans-serif, system-ui, sans-serif"
+const CURVA = 'cubic-bezier(0.05, 0.6, 0.4, 0.95)'
+
+// Largura x altura de cada estado, com a barra embaixo da tela.
+const TAMANHO = {
+  parada: [40, 8],       // sempre na tela, quase invisível
+  pronta: [50, 30],      // mouse em cima: mostra o microfone
+  segurando: [73, 30],   // Fn segurada
+  travada: [106, 30],    // mãos livres: cancelar, onda, parar
+  processando: [98, 30],
+  erro: [91, 30]
+}
+
+// A onda: 10 barras de 2 px. Em repouso cada barra tem 2 px de altura e
+// cresce com o volume (até 9x); as do meio crescem mais (fator 1 - d²/48,
+// o "bulge" do Wispr) e cada uma oscila com um atraso próprio.
+const N_BARRAS = 10
+const BARRAS = Array.from({ length: N_BARRAS }, (_, i) => {
+  const d = Math.abs((N_BARRAS - 1) / 2 - i)
+  return { escala: Math.max(0, 1 - (d * d) / 48), atraso: 0.1 * (i < N_BARRAS / 2 ? i : i - N_BARRAS) }
+})
+
+// Sons de início e fim do ditado. São gerados aqui (duas notas curtas), não
+// copiados de app nenhum.
+let ctxSom = null
+function tocarSom(tipo) {
+  try {
+    ctxSom = ctxSom || new AudioContext()
+    const t0 = ctxSom.currentTime + 0.01
+    const notas = tipo === 'inicio' ? [660, 990] : [990, 660]
+    notas.forEach((f, i) => {
+      const o = ctxSom.createOscillator()
+      const g = ctxSom.createGain()
+      o.type = 'sine'
+      o.frequency.value = f
+      const t = t0 + i * 0.07
+      g.gain.setValueAtTime(0, t)
+      g.gain.linearRampToValueAtTime(0.06, t + 0.008)
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09)
+      o.connect(g).connect(ctxSom.destination)
+      o.start(t)
+      o.stop(t + 0.1)
+    })
+  } catch { /* sem áudio de saída: o ditado segue */ }
+}
 
 // POR QUE OS BOTÕES DAQUI USAM onMouseUp E NÃO onClick
 //
@@ -34,14 +83,85 @@ const ALERTA = '#ff9f9f'
 //
 // No macOS o onClick funcionava porque o AppKit não come o clique de ativação
 // desse jeito — por isso o bug só apareceu no port.
+// Cartão "sem campo" do Wispr (CSS do app deles, 2026-11-17): dica em cima
+// ("Selecione um campo de texto primeiro, depois dite"), o texto em até 3
+// linhas, e o botão embaixo. Aqui o texto já foi pro clipboard, então o botão
+// nasce como "Copiado!". O X tem um anel que esvazia em 8 s e fecha sozinho;
+// mouse em cima pausa a contagem, igual ao Wispr.
+const PRAZO_CARTAO_MS = 8000
+function CartaoSemCampo({ texto }) {
+  const [pausado, setPausado] = useState(false)
+  const restanteRef = useRef(PRAZO_CARTAO_MS)
+  const inicioRef = useRef(0)
+  useEffect(() => {
+    if (pausado) return
+    inicioRef.current = performance.now()
+    const t = setTimeout(() => window.dita.closePopup(), restanteRef.current)
+    return () => {
+      clearTimeout(t)
+      restanteRef.current = Math.max(0, restanteRef.current - (performance.now() - inicioRef.current))
+    }
+  }, [pausado])
+  const R = 10.5
+  const perimetro = 2 * Math.PI * R
+  const progresso = 1 - restanteRef.current / PRAZO_CARTAO_MS
+  return (
+    <div onMouseEnter={() => setPausado(true)} onMouseLeave={() => setPausado(false)} style={{
+      position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', textAlign: 'left',
+      animation: 'conteudoCartao .2s ease-out .12s both'
+    }}>
+      <button onMouseUp={() => window.dita.closePopup()} title="Fechar" style={{
+        position: 'absolute', top: 12, right: 12, width: 24, height: 24, padding: 0, border: 0, borderRadius: '50%',
+        background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
+      }}>
+        <svg width="24" height="24" viewBox="0 0 24 24" style={{ position: 'absolute', transform: 'rotate(-90deg)' }}>
+          <circle cx="12" cy="12" r={R} fill="none" stroke="rgba(255,255,255,.12)" strokeWidth="1.5" />
+          <circle cx="12" cy="12" r={R} fill="none" stroke="rgba(255,255,255,.55)" strokeWidth="1.5"
+            strokeDasharray={perimetro} strokeDashoffset={perimetro * progresso}
+            style={{ '--perimetro': `${perimetro}px`, '--de': `${perimetro * progresso}px`, animation: `anel ${restanteRef.current}ms linear forwards`, animationPlayState: pausado ? 'paused' : 'running' }} />
+        </svg>
+        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fcfcfb" strokeWidth="3" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+      </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '16px 50px 20px 16px' }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fcfcfb" strokeOpacity=".4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M5 4h4M7 4v16M5 20h4M13 7h6M13 12h6M13 17h4" />
+        </svg>
+        <span style={{ fontSize: 12, lineHeight: '20px', color: '#fcfcfb', opacity: 0.4 }}>Selecione um campo de texto primeiro, depois dite</span>
+      </div>
+      <div style={{ padding: '0 16px 20px' }}>
+        <p style={{
+          margin: 0, fontSize: 14, lineHeight: '20px', color: '#b3b2ad', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+          display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3, overflow: 'hidden'
+        }}>{texto}</p>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, padding: '0 16px 20px', marginTop: 'auto' }}>
+        <span style={{ fontSize: 12, lineHeight: '20px', color: '#fcfcfb', opacity: 0.4 }}>Clique num campo e use ⌘V</span>
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8,
+          background: '#71716e', color: '#eeebe3', fontSize: 14, lineHeight: '20px', fontWeight: 600
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5L20 7" /></svg>
+          Copiado!
+        </span>
+      </div>
+    </div>
+  )
+}
+
 export default function Popup() {
   const [phase, setPhase] = useState('idle') // idle|recording|processing|done|error|cancelled
+  const [modo, setModo] = useState('ptt')     // ptt (segurando) | travado (mãos livres)
+  const [hover, setHover] = useState(false)
   const [result, setResult] = useState('')
   const [pasted, setPasted] = useState(false)
-  const [shown, setShown] = useState(false)
-  const [session, setSession] = useState(0) // re-arma o equalizador a cada gravação
+  const [session, setSession] = useState(0) // re-arma a onda a cada gravação
   const [rtErro, setRtErro] = useState('')   // falha do motor remoto, visível em vez de silenciosa
-  const canvasRef = useRef(null)
+  const ondaRef = useRef(null)
+  const sonsRef = useRef(true)
+  // Ajustes guardados aqui para o início do ditado não esperar um IPC; o main
+  // avisa quando mudam (settings:mudou). O id do embutido é descoberto uma vez.
+  const settingsRef = useRef(null)
+  const embutidoRef = useRef(null)
   const mediaRef = useRef({})
   // Mesma ideia da época do main, do lado de cá. `startRecording` atravessa
   // três `await` (configurações, getUserMedia, MediaRecorder) e o ditado pode
@@ -52,10 +172,34 @@ export default function Popup() {
   const epocaRef = useRef(0)
 
   useEffect(() => {
+    // Preferência de som. O main pode ainda não ter subido os handlers quando
+    // a pílula nasce (ela abre junto com o app), então insiste um pouco.
+    let vivo = true
+    ;(async () => {
+      for (let i = 0; vivo && i < 60; i++) {
+        try { const st = await window.dita.getSettings(); settingsRef.current = st; sonsRef.current = st.sons !== 'false'; return }
+        catch { await new Promise((r) => setTimeout(r, 500)) }
+      }
+    })()
+    // Lista de microfones pro menu da barra de cima (o main não enxerga os
+    // dispositivos de áudio; quem enxerga é o renderer).
+    const informarMics = () => navigator.mediaDevices.enumerateDevices()
+      .then((l) => window.dita.informarMicrofones?.(l
+        .filter((d) => d.kind === 'audioinput' && d.deviceId !== 'default' && d.deviceId !== 'communications')
+        .map((d) => ({ deviceId: d.deviceId, label: d.label }))))
+      .catch(() => {})
+    informarMics()
+    navigator.mediaDevices.addEventListener?.('devicechange', () => { embutidoRef.current = null; informarMics() })
     window.dita.onCommand(async (ch, payload) => {
-      if (ch === 'rec:start') await startRecording(payload)
-      if (ch === 'rec:stop') stopRecording(true)
-      if (ch === 'rec:cancel') { stopRecording(false); setShown(false) }
+      if (ch === 'rec:start') {
+        setModo(payload?.modo === 'travado' ? 'travado' : 'ptt')
+        if (sonsRef.current) tocarSom('inicio')
+        await startRecording(payload)
+      }
+      if (ch === 'rec:modo') setModo(payload === 'travado' ? 'travado' : 'ptt')
+      if (ch === 'settings:mudou' && payload) { settingsRef.current = payload; sonsRef.current = payload.sons !== 'false' }
+      if (ch === 'rec:stop') { if (sonsRef.current) tocarSom('fim'); stopRecording(true) }
+      if (ch === 'rec:cancel') { stopRecording(false); setPhase('idle') }
       // Só corta o microfone, sem tocar na visibilidade: o main manda isto
       // junto com a tarja "Transcrição cancelada", que precisa continuar na
       // tela. É a rede de segurança do botão X (ver rec:cancel-hard no main).
@@ -63,54 +207,33 @@ export default function Popup() {
       if (ch === 'rec:phase') setPhase(payload)
       if (ch === 'rec:result') { setResult(payload.text); setPasted(!!payload.pasted); setPhase('done') }
       if (ch === 'rec:cancelled') setPhase('cancelled')
-      if (ch === 'rec:closing') setShown(false)
+      if (ch === 'rec:closing' || ch === 'rec:repouso') { setPhase('idle'); setRtErro('') }
       if (ch === 'rt:erro') setRtErro(String(payload ?? '').trim())
     })
+    return () => { vivo = false }
   }, [])
 
+  // Volume do microfone -> --audio-scale nas barras, direto no DOM (sem
+  // re-render do React a cada quadro). Escala do Wispr: max(1, ganho x nível).
   useEffect(() => {
     if (phase !== 'recording') return
-    const canvas = canvasRef.current
+    const onda = ondaRef.current
     const analyser = mediaRef.current.analyser
-    if (!canvas || !analyser) return
-
-    analyser.smoothingTimeConstant = 0.85
-    const ctx = canvas.getContext('2d')
-    const data = new Uint8Array(analyser.frequencyBinCount)
-    const dpr = devicePixelRatio
-    const BAR = 3 * dpr, GAP = 3.5 * dpr
-    let W = 0, H = 0, half = 0, smooth = new Float32Array(0)
-
-    // o canvas pode ainda não ter layout no primeiro frame: mede a cada volta
-    // e só desenha quando tiver largura, em vez de travar em zero pra sempre
-    const measure = () => {
-      const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr)
-      if (w === W && h === H) return half > 0
-      W = w; H = h
-      canvas.width = W; canvas.height = H
-      half = Math.max(0, Math.floor((W / 2 - GAP / 2) / (BAR + GAP)))
-      smooth = new Float32Array(half)
-      return half > 0
-    }
-
+    if (!onda || !analyser) return
+    analyser.fftSize = 512
+    const dados = new Float32Array(analyser.fftSize)
+    let suave = 0
     let raf
     const loop = () => {
       raf = requestAnimationFrame(loop)
-      if (!measure()) return
-      analyser.getByteFrequencyData(data)
-      const cx = W / 2
-      ctx.clearRect(0, 0, W, H)
-      ctx.fillStyle = WHITE
-      for (let i = 0; i < half; i++) {
-        const idx = Math.min(data.length - 1, Math.floor((i / half) * 24) + 1)
-        const v = Math.pow(data[idx] / 255, 1.4)
-        const target = Math.max(2 * dpr, v * H * 0.72)
-        smooth[i] += (target - smooth[i]) * 0.4
-        const h = smooth[i]
-        const y = (H - h) / 2
-        ctx.fillRect(cx + GAP / 2 + i * (BAR + GAP), y, BAR, h)
-        ctx.fillRect(cx - GAP / 2 - BAR - i * (BAR + GAP), y, BAR, h)
-      }
+      analyser.getFloatTimeDomainData(dados)
+      let soma = 0
+      for (let i = 0; i < dados.length; i++) soma += dados[i] * dados[i]
+      const rms = Math.sqrt(soma / dados.length)
+      // -55 dB (silêncio de sala) até -12 dB (fala alta) viram 0..1
+      const nivel = Math.min(1, Math.max(0, (20 * Math.log10(rms + 1e-9) + 55) / 43))
+      suave += (nivel - suave) * (nivel > suave ? 0.5 : 0.15)
+      onda.style.setProperty('--audio-scale', String(Math.max(1, 1 + 8 * suave).toFixed(2)))
     }
     loop()
     return () => cancelAnimationFrame(raf)
@@ -229,6 +352,26 @@ export default function Popup() {
     try { stream?.getTracks().forEach((t) => t.stop()) } catch { /* já parado */ }
   }
 
+  // Qual microfone abrir. Escolhido nos Ajustes = esse. "Automático" = o
+  // microfone EMBUTIDO do Mac, mesmo com fone Bluetooth conectado (decisão do
+  // Felipe em 2026-11-17). Motivo medido no Mac dele: com os AirPods como
+  // entrada padrão, abrir o microfone obriga o macOS a trocar o fone para o
+  // modo de chamada, o que leva cerca de 1 s (a fala desse começo se perde) e
+  // derruba a qualidade da música. O Wispr Flow chega a avisar que AirPods não
+  // são bons para ditado. Sem embutido (Mac de mesa), fica o padrão do sistema.
+  async function escolherMicrofone() {
+    const escolhido = settingsRef.current?.micDeviceId
+    if (escolhido) return { deviceId: { exact: escolhido } }
+    if (embutidoRef.current) return { deviceId: { exact: embutidoRef.current } }
+    try {
+      const lista = await navigator.mediaDevices.enumerateDevices()
+      const embutido = lista.find((d) => d.kind === 'audioinput' && d.deviceId !== 'default' && d.deviceId !== 'communications' &&
+        /macbook|built-?in|embutid|interno|internal/i.test(d.label))
+      if (embutido) { embutidoRef.current = embutido.deviceId; return { deviceId: { exact: embutido.deviceId } } }
+    } catch { /* sem lista: padrão do sistema */ }
+    return true
+  }
+
   async function startRecording(payload) {
     releaseMic()
     const minhaEpoca = epocaRef.current
@@ -246,12 +389,12 @@ export default function Popup() {
     // abaixo. Nos primeiros milissegundos a pílula aparece com as barras
     // paradas, que é a leitura honesta do que está acontecendo.
     setPhase('recording')
-    setShown(true)
+    setHover(false)
 
     let stream
+    const t0 = performance.now()
     try {
-      const settings = await window.dita.getSettings()
-      const audioInput = settings.micDeviceId ? { deviceId: { exact: settings.micDeviceId } } : true
+      const audioInput = await escolherMicrofone()
       try { stream = await navigator.mediaDevices.getUserMedia({ audio: audioInput }) }
       // O microfone escolhido nas configurações pode ter sido desconectado
       // (fone bluetooth que saiu do ar). Cair no dispositivo padrão é melhor do
@@ -271,6 +414,8 @@ export default function Popup() {
     // Cmd direito cabe folgado aqui). O stream que acabou de chegar não tem
     // mais dono: fechar agora, ou ele vaza.
     if (minhaEpoca !== epocaRef.current) { descartarStream(stream); return }
+    const rotulo = stream.getAudioTracks()[0]?.label || '?'
+    window.dita.medida?.(`mic aberto em ${Math.round(performance.now() - t0)}ms (${rotulo})`)
 
     const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
     const chunks = []
@@ -285,7 +430,7 @@ export default function Popup() {
     recorder.start(250)
     const audioCtx = new AudioContext()
     const analyser = audioCtx.createAnalyser()
-    analyser.fftSize = 64
+    analyser.fftSize = 512
     audioCtx.createMediaStreamSource(stream).connect(analyser)
     // Rede de segurança contra microfone preso, NÃO limite de fala: 30 min.
     // Chama o mesmo caminho do botão check (pelo main), pra máquina de estado
@@ -322,153 +467,133 @@ export default function Popup() {
     else if (phase === 'recording') setPhase('idle')
   }
 
-  const wrap = {
-    position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-    opacity: shown ? 1 : 0, transform: shown ? 'scale(1)' : 'scale(0.96)',
-    transition: 'opacity .12s ease, transform .14s ease'
+  // Mouse: a janela inteira deixa o clique passar; entrar na pílula (ou num
+  // card com botões) pede o mouse de volta ao main.
+  const entrar = () => { setHover(true); window.dita.mouseNaPilula(true) }
+  const sair = () => { setHover(false); window.dita.mouseNaPilula(false) }
+
+  const btnCirculo = {
+    border: 0, borderRadius: '50%', width: 20, height: 20, padding: 0, cursor: 'pointer', flexShrink: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'center', background: BORDA
   }
-  const container = (tall) => ({
-    width: '100%', height: '100%', boxSizing: 'border-box', background: BG,
-    borderRadius: tall ? 22 : 999, display: 'flex', flexDirection: tall ? 'column' : 'row',
-    alignItems: 'center', color: WHITE, fontFamily: "'General Sans', ui-sans-serif, system-ui, sans-serif",
-    boxShadow: '0 10px 30px rgba(0,0,0,.5)', overflow: 'hidden'
-  })
-  const circleBase = {
-    border: 0, borderRadius: '50%', width: 24, height: 24, cursor: 'pointer',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0
-  }
-  const circleX = { ...circleBase, background: XBG }
-  const circleCheck = { ...circleBase, background: WHITE }
   const IconX = (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#d0d0d2" strokeWidth="2.4" strokeLinecap="round">
+    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={TEXTO} strokeWidth="3" strokeLinecap="round">
       <path d="M6 6l12 12M18 6L6 18" />
     </svg>
   )
-  const IconCheck = (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1a1a1c" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M5 12.5l4.2 4.2L19 7" />
+  const IconParar = <span style={{ width: 8, height: 8, borderRadius: 2, background: ALERTA, display: 'block' }} />
+  const IconMic = (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={TEXTO} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="3" width="6" height="12" rx="3" />
+      <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
     </svg>
   )
-  const grayBtn = {
-    background: BTN, color: WHITE, border: 0, borderRadius: 9, padding: '7px 15px',
-    cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit', flexShrink: 0
-  }
+  const botao = (principal) => ({
+    border: 0, borderRadius: 8, padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+    fontSize: 12.5, fontWeight: 600, fontFamily: FONTE,
+    background: principal ? LUMEN : BORDA, color: principal ? PRETO : TEXTO
+  })
 
-  // A PÍLULA TEM 214x40 E NÃO PODE CRESCER (o tamanho é fixado no main, em
-  // recorder-window.js). Então o texto ao vivo não ganha linha própria: ele
-  // divide a faixa do meio com o equalizador, que encolhe de "todo o espaço
-  // livre" para uma tira de 26px assim que a primeira palavra chega.
-  //
-  // Por que o equalizador não some de vez: ele é o único sinal de "o microfone
-  // está te ouvindo". Num trecho de silêncio, ou quando o Gemini demora, um
-  // meio vazio ficaria indistinguível de um app travado.
-  //
-  // Por que alinhado à direita e cortado na esquerda: o transcrito só cresce, e
-  // o que interessa é sempre o FIM dele. Com justifyContent 'flex-end' o
-  // excesso transborda para a esquerda e o overflow hidden corta ali — sem
-  // ellipsis, sem fatiar a string por contagem de caracteres (que erra sempre,
-  // porque 'i' e 'm' não têm a mesma largura). A máscara desfia a borda
-  // esquerda para o corte parecer um deslize contínuo, e não uma palavra
-  // decapitada.
-  // Só ERRO aparece na fita. O texto transcrito NÃO: ele já vai ser colado no
-  // campo onde o cursor está, que é o destino de verdade. Mostrá-lo antes na
-  // pílula é ler a mesma frase duas vezes — e, pior, dava a impressão de que o
-  // app tinha parado ali, porque o texto ficava visível enquanto a sessão ainda
-  // esperava o sinal de fim. Esse atraso foi corrigido (ver ehFimDaFala em
-  // gemini-live.js); a fita de texto, por outro lado, era redundância pura.
-  const temFita = Boolean(rtErro)
-  const fita = {
-    flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', justifyContent: 'flex-end',
-    alignItems: 'center', whiteSpace: 'nowrap', fontSize: 11.5,
-    color: rtErro ? ALERTA : WHITE, fontWeight: 500,
-    WebkitMaskImage: 'linear-gradient(to right, transparent 0, #000 20px)'
-  }
-
-  // Barras estáticas do equalizador (ícone do header do card)
-  const eqIcon = (
-    <svg width="15" height="15" viewBox="0 0 20 20" style={{ flexShrink: 0 }}>
-      {[7, 11, 16, 9, 5].map((h, i) => (
-        <rect key={i} x={2 + i * 3.6} width="2.2" rx="1.1" y={(20 - h) / 2} height={h} fill={GRAY} />
+  const onda = (ativa) => (
+    <div ref={ondaRef} style={{ display: 'flex', alignItems: 'center', gap: 2, height: 18, flexShrink: 0 }}>
+      {BARRAS.map((b, i) => (
+        <span key={i} className={ativa ? 'barra barra-viva' : 'barra barra-processando'}
+          style={{ '--bar-height-scale': b.escala, animationDelay: `${ativa ? b.atraso : i * 0.08}s` }} />
       ))}
-    </svg>
+    </div>
   )
 
-  let body
-  if (phase === 'done' && !pasted) {
-    body = (
-      <div style={{ ...container(true), padding: '16px 18px', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
-          {eqIcon}
-          <span style={{ flex: 1, color: GRAY, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            Selecione uma caixa de texto e cole com o botão
-          </span>
-          <button onMouseUp={() => window.dita.closePopup()} style={circleX}>{IconX}</button>
-        </div>
-        <div style={{ flex: 1, width: '100%', fontSize: 17, lineHeight: 1.35, overflow: 'hidden' }}>{result}</div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
-          <button onMouseUp={() => { window.dita.copyText(result); window.dita.closePopup() }} style={{ ...grayBtn, padding: '9px 18px', fontSize: 13.5 }}>Copiar Ditado</button>
-        </div>
-      </div>
-    )
-  } else if (phase === 'done' && pasted) {
-    body = (
-      <div style={{ ...container(false), padding: '0 14px', justifyContent: 'center', gap: 8 }}>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={GRAY} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M5 12.5l4.2 4.2L19 7" />
-        </svg>
-        <span style={{ fontSize: 13, fontWeight: 600 }}>Colado</span>
-      </div>
-    )
-  } else if (phase === 'cancelled') {
-    body = (
-      <div style={{ ...container(false), padding: '0 8px 0 16px', justifyContent: 'space-between', gap: 12 }}>
-        <span style={{ color: GRAY, fontSize: 13 }}>Transcrição cancelada</span>
-        <button onMouseUp={() => window.dita.undo()} style={grayBtn}>Anular</button>
-      </div>
-    )
-  } else if (phase === 'error') {
-    // O motivo vindo do motor remoto entra como segunda linha em vez de
-    // substituir a primeira: "Áudio preservado" é a informação que decide o que
-    // o usuário faz agora, e a mensagem do Google é o porquê. Cortar a segunda
-    // linha na largura da pílula é aceitável; cortar a primeira não seria.
-    body = (
-      <div style={{ ...container(false), flexDirection: 'column', justifyContent: 'center', padding: '0 14px', gap: 1 }}>
-        <span style={{ color: ALERTA, fontSize: 13 }}>Falha. Áudio preservado.</span>
-        {rtErro && (
-          <span style={{ color: GRAY, fontSize: 10.5, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {rtErro}
-          </span>
-        )}
-      </div>
-    )
-  } else if (phase === 'processing') {
-    // Depois do stop o Gemini ainda pode mandar as últimas palavras. Manter o
-    // texto na tela em vez de trocar por "Transcrevendo…" evita o pisca-pisca
-    // de o transcrito sumir bem no fim — e num ditado remoto essa fase dura
-    // frações de segundo, então "Transcrevendo…" seria só um flash sem sentido.
-    body = (
-      <div style={{ ...container(false), padding: '0 10px', gap: 10 }}>
-        <button onMouseUp={() => window.dita.cancelHard()} style={circleX}>{IconX}</button>
-        {temFita
-          ? <div style={fita}><span>{rtErro}</span></div>
-          : <span style={{ flex: 1, textAlign: 'center', color: GRAY, fontSize: 13 }}>Transcrevendo…</span>}
-        <div style={{ width: 24, flexShrink: 0 }} />
-      </div>
-    )
-  } else {
-    body = (
-      <div style={{ ...container(false), padding: '0 10px', gap: 8 }}>
-        <button onMouseUp={() => window.dita.cancelHard()} style={circleX}>{IconX}</button>
-        <div style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', alignItems: 'center', gap: 6 }}>
-          {/* o loop do equalizador remede clientWidth a cada frame, então ele
-              se reajusta sozinho quando esta faixa encolhe para 26px */}
-          <canvas ref={canvasRef} style={temFita ? { width: 26, flexShrink: 0, height: '100%' } : { flex: 1, minWidth: 0, height: '100%' }} />
-          {temFita && <div style={fita}><span>{rtErro}</span></div>}
-        </div>
-        <button onMouseUp={() => window.dita.finish()} style={circleCheck}>{IconCheck}</button>
-      </div>
-    )
-  }
+  // Estado visual da pílula
+  let estado = 'parada'
+  if (phase === 'recording') estado = modo === 'travado' ? 'travada' : 'segurando'
+  else if (phase === 'processing') estado = 'processando'
+  else if (phase === 'error') estado = 'erro'
+  else if (phase === 'idle' && hover) estado = 'pronta'
+  else if (phase === 'done' && !pasted) estado = 'cartao'
+  // O cartão "sem campo" é a própria pílula esticada (o "morph" do Wispr):
+  // 400 px de largura, raio 24, altura pelas linhas do texto (até 3, como lá).
+  const linhasCartao = Math.min(3, Math.max(1, Math.ceil(String(result || '').length / 52)))
+  const [w, h] = estado === 'cartao' ? [400, 56 + (20 * linhasCartao + 20) + 52] : TAMANHO[estado]
+  const parada = estado === 'parada'
+  const cartao = estado === 'cartao'
 
-  return <div style={wrap}>{body}</div>
+  let miolo = null
+  if (estado === 'pronta') miolo = IconMic
+  else if (estado === 'segurando') miolo = onda(true)
+  else if (estado === 'travada') miolo = (
+    <>
+      <button onMouseUp={() => window.dita.cancelHard()} style={btnCirculo} title="Cancelar">{IconX}</button>
+      {onda(true)}
+      <button onMouseUp={() => window.dita.finish()} style={btnCirculo} title="Parar">{IconParar}</button>
+    </>
+  )
+  else if (estado === 'processando') miolo = onda(false)
+  else if (estado === 'erro') miolo = <span style={{ color: ALERTA, fontSize: 12, fontWeight: 600 }}>Falhou</span>
+  else if (cartao) miolo = <CartaoSemCampo texto={result} />
+
+  // Dica acima da pílula: atalho (parada, com o mouse em cima), cancelado com
+  // Anular, ou o motivo de uma falha.
+  let dica = null
+  if (phase === 'cancelled') dica = (
+    <>
+      <span style={{ color: APOIO }}>Transcrição cancelada</span>
+      <button onMouseUp={() => window.dita.undo()} style={botao(true)}>Desfazer</button>
+    </>
+  )
+  else if (estado === 'pronta') dica = <span>Clique ou segure <b style={{ fontWeight: 700 }}>{rotuloPttCurto(settingsRef.current?.pttShortcut || 'fn', settingsRef.current?.platform)}</b> para ditar</span>
+  else if (estado === 'erro') dica = <span style={{ color: APOIO }}>{rtErro || 'Áudio preservado no histórico.'}</span>
+  else if (rtErro && phase === 'recording') dica = <span style={{ color: APOIO }}>{rtErro}</span>
+
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center',
+      justifyContent: 'flex-end', gap: 8, paddingBottom: 10, boxSizing: 'border-box', fontFamily: FONTE
+    }}>
+      <style>{`
+        .barra { width: 2px; height: 2px; border-radius: .5px; background: rgba(255,255,255,.4); transform-origin: center; will-change: transform;
+          transform: scaleY(calc(var(--audio-scale, 1) * var(--bar-height-scale, 1))); }
+        .barra-viva { background: #fff; animation: onda 1s infinite ease-in-out; }
+        .barra-processando { animation: processa 1.1s infinite ease-in-out; }
+        @keyframes onda {
+          0%, 100% { transform: scaleY(calc(var(--audio-scale, 1) * var(--bar-height-scale, 1) * 1)) }
+          20% { transform: scaleY(calc(var(--audio-scale, 1) * var(--bar-height-scale, 1) * 1.2)) }
+          40% { transform: scaleY(calc(var(--audio-scale, 1) * var(--bar-height-scale, 1) * 1.5)) }
+          80% { transform: scaleY(calc(var(--audio-scale, 1) * var(--bar-height-scale, 1) * 1.1)) }
+          90% { transform: scaleY(calc(var(--audio-scale, 1) * var(--bar-height-scale, 1) * 1.3)) }
+        }
+        @keyframes processa { 0%, 100% { transform: scaleY(1); opacity: .35 } 50% { transform: scaleY(3); opacity: 1 } }
+        @keyframes surge { from { opacity: 0; transform: translateY(4px) } to { opacity: 1; transform: none } }
+        @keyframes conteudoCartao { from { opacity: 0; transform: scale(.96) } to { opacity: 1; transform: none } }
+        @keyframes anel { from { stroke-dashoffset: var(--de) } to { stroke-dashoffset: var(--perimetro) } }
+      `}</style>
+      {dica && (
+        <div onMouseEnter={phase === 'cancelled' ? entrar : undefined} onMouseLeave={phase === 'cancelled' ? sair : undefined} style={{
+          display: 'flex', alignItems: 'center', gap: 10, padding: phase === 'cancelled' ? '4px 4px 4px 12px' : '6px 10px',
+          background: PRETO, border: `1px solid ${BORDA}`, borderRadius: 999, color: TEXTO, fontSize: 12,
+          whiteSpace: 'nowrap', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', animation: 'surge .14s ease-out'
+        }}>{dica}</div>
+      )}
+      {/* área de toque um pouco maior que a pílula parada, como o "hotArea" do Wispr */}
+      <div onMouseEnter={entrar} onMouseLeave={sair}
+        onMouseUp={() => { if (phase === 'idle') window.dita.cliquePilula() }}
+        style={{ padding: '6px 10px', display: 'flex', justifyContent: 'center', cursor: phase === 'idle' ? 'pointer' : 'default' }}>
+        <div onMouseEnter={cartao ? entrar : undefined} onMouseLeave={cartao ? sair : undefined} style={{
+          position: 'relative',
+          width: w, height: h, boxSizing: 'border-box', borderRadius: parada ? 6 : cartao ? 24 : 22.5,
+          background: parada ? 'rgba(0,0,0,.5)' : PRETO,
+          border: `1px solid ${parada ? 'rgba(255,255,255,.5)' : BORDA}`,
+          display: 'flex', alignItems: 'center', justifyContent: estado === 'travada' ? 'space-between' : 'center',
+          padding: estado === 'travada' ? '0 4px' : 0, overflow: 'hidden', color: TEXTO,
+          // O cartão estica mais devagar que as trocas da pílula (que são de
+          // 100 ms no Wispr): é uma mudança de forma grande, e rápido demais
+          // ela pisca em vez de crescer.
+          transition: cartao || phase === 'idle'
+            ? `width .28s ${CURVA}, height .28s ${CURVA}, border-radius .28s ${CURVA}, background .2s ease, border-color .2s ease`
+            : `width .1s ${CURVA}, height .1s ${CURVA}, border-radius .1s ${CURVA}, background .2s ease, border-color .2s ease`
+        }}>
+          {miolo}
+        </div>
+      </div>
+    </div>
+  )
 }

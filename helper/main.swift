@@ -52,6 +52,10 @@ let argumentos = CommandLine.arguments
 if argumentos.count > 1 {
     if argumentos[1] == "parse" { rodarParse(argumentos) }
     if argumentos[1] == "ptt" { rodarPtt(argumentos) }
+    // Modos de uso rápido (Contexto.swift): um processo por chamada, fora do
+    // processo do CGEventTap. Ver o porquê no topo daquele arquivo.
+    if argumentos[1] == "contexto" { rodarContexto() }
+    if argumentos[1] == "colar" { rodarColar(argumentos) }
 }
 
 // Configuração de atalhos via argv: --toggle=<spec> --ptt=<spec>.
@@ -72,6 +76,11 @@ DispatchQueue.global().async {
         if line == "state on" { State.shared.recording = true }
         if line == "state off" { State.shared.recording = false }
     }
+    // stdin fechou = quem abriu o helper morreu (crash, kill, app reinstalado).
+    // Sem sair aqui, o helper ficava órfão pra sempre, ainda engolindo a Fn do
+    // sistema inteiro e disputando a tecla com o helper do app novo (visto em
+    // 2026-11-17: um órfão de 3 horas).
+    exit(0)
 }
 
 // Pede a permissão com o prompt oficial (registra o app na lista) e aguarda
@@ -105,6 +114,12 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
             st.pttDown = false
             emit(st.pttCombo ? "ptt_abort" : "ptt_up")
         }
+        // Fn é o atalho: o sistema não pode ver ela sozinha. Repassar o evento
+        // deixava o macOS abrir o seletor de emoji (ou o ditado da Apple) a
+        // cada ditado. É o que o helper do Wispr Flow faz ("Suppressing
+        // event"). As teclas apertadas COM a Fn (F1-F12, setas) continuam
+        // chegando, porque elas vêm em keyDown com a flag, não por aqui.
+        if ptt.code == 63 { return nil }
         return Unmanaged.passRetained(event)
     }
 
@@ -116,6 +131,10 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
         // Toggle: suprime o evento pro sistema não digitar o caractere
         if toggleSpec.casaCom(keyCode: keyCode, flags: flags) {
             if !isRepeat { emit("toggle") }
+            // Fn+Espaço com a Fn sendo também o PTT: soltar a Fn depois disso
+            // não é "terminei de falar", é o fim do atalho. Vira ptt_abort, que
+            // a máquina ignora quando o ditado já está travado.
+            if st.pttDown { st.pttCombo = true }
             return nil
         }
         // Esc: só reporta (e suprime) se estiver gravando

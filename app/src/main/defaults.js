@@ -12,7 +12,8 @@ export const DEFAULT_TOGGLE = isWin ? 'ctrl+shift+space' : 'fn+space'
 
 // Right Alt é AltGr em teclado ABNT2 — usá-lo como push-to-talk quebraria
 // ç, º e ₢. Right Ctrl é o análogo seguro do Right Command do macOS.
-export const DEFAULT_PTT = isWin ? 'rctrl' : 'rcmd'
+// No Mac o padrão é a Fn segurada, igual ao Wispr Flow (2026-11-17).
+export const DEFAULT_PTT = isWin ? 'rctrl' : 'fn'
 
 // TOGGLE_OPTIONS/PTT_OPTIONS foram removidos daqui.
 //

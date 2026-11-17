@@ -438,7 +438,7 @@ describe('tabela de apresentação x contrato do main process', () => {
     expect(opcoes).toContain('ropt')
     expect(opcoes).not.toContain('ralt')
     // cada modificador com os dois lados, mais a tecla globo
-    expect(opcoes).toEqual(['rcmd', 'lcmd', 'rctrl', 'lctrl', 'rshift', 'lshift', 'ropt', 'lopt', 'fn'])
+    expect(opcoes).toEqual(['fn', 'rcmd', 'lcmd', 'rctrl', 'lctrl', 'rshift', 'lshift', 'ropt', 'lopt'])
   })
 
   // As duas teclas Alt têm efeito colateral: a direita é o AltGr do ABNT2 (ç,
@@ -454,10 +454,12 @@ describe('tabela de apresentação x contrato do main process', () => {
     expect(ATALHOS.win32.padraoPtt).toBe('rctrl')
   })
 
-  it('avisa sobre a tecla globo no push-to-talk do macOS', () => {
-    const fn = ATALHOS.darwin.ptt.find(([v]) => v === 'fn')
-    expect(fn[2]).toMatch(/globo/)
-    expect(ATALHOS.darwin.padraoPtt).toBe('rcmd')
+  // Desde 2026-11-17 a Fn é o padrão (igual ao Wispr Flow) e o helper engole
+  // o evento dela, então o macOS não abre emoji nem ditado: o aviso que pedia
+  // para mexer nos Ajustes do sistema deixou de ser verdade e saiu.
+  it('a Fn é o push-to-talk padrão do macOS e vem primeiro na lista', () => {
+    expect(ATALHOS.darwin.padraoPtt).toBe('fn')
+    expect(ATALHOS.darwin.ptt[0][0]).toBe('fn')
   })
 
   it('a ordem canônica dos modificadores é estável', () => {

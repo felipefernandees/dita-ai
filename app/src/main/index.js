@@ -1,11 +1,15 @@
-import { app, ipcMain, clipboard, systemPreferences, Notification } from 'electron'
+import { app, ipcMain, clipboard, systemPreferences, Notification, net, nativeTheme } from 'electron'
 import { join } from 'path'
 import { mkdirSync } from 'fs'
 import { createRecorderWindow } from './recorder-window.js'
 import { createHotkeyMachine, startHotkeys } from './hotkeys.js'
 import { ensureModel, startWhisperServerWithFallback, transcribe } from './whisper.js'
-import { initDb, saveDictation, getLastDictation, listHistory, listDictionary, listSnippets, getSetting, setSetting } from './db.js'
-import { polish } from './polish.js'
+import { initDb, saveDictation, getLastDictation, listHistory, listDictionary, listSnippets, getSetting, setSetting, addDictionaryWord, removeDictionaryWord, deleteDictation, clearHistory, estatisticas } from './db.js'
+import { polish, acharSnippet, aplicarDicionario } from './polish.js'
+import { capturarContexto } from './contexto.js'
+import { limparTexto, aquecerConexao } from './limpeza.js'
+import { ajustarParaColar } from './ajuste-colagem.js'
+import { execFileSync } from 'child_process'
 import { getFrontmostApp, pasteText } from './paster.js'
 import { createTray } from './tray.js'
 import { openSettingsWindow } from './settings-window.js'
@@ -23,20 +27,42 @@ let rec, hotkeys, whisper, tray
 // ele atrasava o popup em TODO ditado e, quando o System Events engasgava,
 // segurava o começo da gravação até depois de o usuário já ter desistido.
 let appEmFoco = Promise.resolve('')
-const dlog = (m) => { if (process.env.DITA_DEBUG) { try { require('fs').appendFileSync(require('path').join(require('os').homedir(), 'dita-debug.log'), new Date().toISOString() + ' ' + m + '\n') } catch {} } }
+// Contexto do ditado (app, URL, texto em volta do cursor, palavras da tela),
+// capturado no INÍCIO pelo helper e aguardado só na hora de entregar o texto.
+// Mesma lógica do appEmFoco: promessa com prazo próprio, nunca na frente do popup.
+let contextoAtual = Promise.resolve(null)
+// Último texto entregue, pra limpeza continuar a frase quando a pessoa dita em
+// dois tempos no mesmo campo.
+let ultimoDitado = { texto: '', app: '', em: 0 }
+const JANELA_CONTINUIDADE_MS = 2 * 60 * 1000
+import { dlog } from './log.js'
 
 let recStartedAt = 0
 let cancelled = false      // Esc marcou este ditado como cancelado
 let pendingUndo = null     // texto guardado pra função Anular
 let wantUndo = false       // Anular clicado antes da transcrição terminar
 let dictationSeq = 0       // numera cada ditado processado
+let todosAjustesFora = () => ({})
+const TEMA_ELECTRON = { sistema: 'system', claro: 'light', escuro: 'dark' }
 let abortedSeq = 0         // até que número o usuário mandou descartar
+let webmAtrasadoCancelado = false // o webm que ainda vai chegar é de um ditado cancelado
+// O Gemini já entregou o texto deste ditado: o webm de reserva que chegar
+// depois NÃO pode virar uma segunda transcrição. Visto em 2026-11-17: a mesma
+// fala colada duas vezes, com diferenças miúdas ("da gente" x "de a gente"),
+// uma do Gemini e outra do whisper, porque o webm chegou depois de o Gemini
+// encerrar e de o bloquearWebm já ter sido liberado.
+let descartarWebm = false
 
-async function processDictation(webmBuffer) {
+// `cancelado` vem de quem já consumiu o `cancelled` antes (o finalizarGemini,
+// quando o Gemini não devolve texto e o áudio guardado cai pro whisper). Sem
+// ele, um Esc logo no começo do ditado virava texto colado: visto em
+// 2026-11-17, fala de 1 s cancelada e colada 10 s depois.
+async function processDictation(webmBuffer, { cancelado = false } = {}) {
   const seq = ++dictationSeq
-  const wasCancelled = cancelled
+  const wasCancelled = cancelled || cancelado
   cancelled = false
   if (!wasCancelled) rec.send('rec:phase', 'processing')
+  dlog(`whisper: transcrevendo o webm (${webmBuffer?.byteLength || 0} bytes)`)
   try {
     const raw = await transcribe(webmBuffer, { port: whisper.port })
     await entregarTexto(raw, { seq, wasCancelled })
@@ -51,8 +77,76 @@ async function processDictation(webmBuffer) {
 // ou do Gemini. Extraído em função própria justamente pra não haver duas
 // versões desta sequência: a regra de ouro (salvar antes de colar), o Anular e
 // as fases do popup precisam se comportar igual nos dois motores.
+// Nome de quem dita, pra a limpeza grafar certo quando a pessoa fala o próprio
+// nome. Vem do ajuste (fase 3) ou, até lá, do nome completo da conta do Mac.
+let nomeDaConta = null
+function nomeUsuario() {
+  const salvo = getSetting('nomeUsuario', '')
+  if (salvo) return salvo
+  if (nomeDaConta === null) {
+    nomeDaConta = ''
+    if (process.platform === 'darwin') {
+      try { nomeDaConta = execFileSync('id', ['-F'], { encoding: 'utf8', timeout: 500 }).trim() } catch {}
+    }
+  }
+  return nomeDaConta
+}
+
+// Do texto cru ao texto que vai pro campo. Três camadas, cada uma com rede:
+//   1. polish: o caminho antigo (dicionário, atalhos de texto, listas). É o
+//      resultado garantido e o que vale se a IA falhar.
+//   2. limpeza por IA com o contexto (só com chave do Gemini salva).
+//   3. ajuste fino com o texto em volta do cursor (maiúscula, espaço, ponto).
+// A rede do Chromium (net.fetch) e não a do Node: ela reaproveita a conexão
+// aberta pelo aquecerConexao() no começo do ditado.
+const fetchDaRede = (url, opcoes) => net.fetch(url, opcoes)
+
+async function prepararTexto(raw) {
+  const dicionario = listDictionary()
+  const snippets = listSnippets()
+  const garantido = polish(raw, { dictionary: dicionario, snippets })
+  if (!garantido) return { text: '', colar: '' }
+  // Atalho de texto é literal: nem IA nem ajuste mexem nele.
+  if (acharSnippet(garantido, snippets) !== null || snippets.some((s) => s.content === garantido)) {
+    return { text: garantido, colar: garantido }
+  }
+
+  const ctx = await contextoAtual.catch(() => null)
+  let text = garantido
+
+  const cfg = lerConfig()
+  if (cfg.apiKey && getSetting('limpezaIA', 'true') === 'true') {
+    const continua = ctx && ultimoDitado.app === ctx.app && Date.now() - ultimoDitado.em < JANELA_CONTINUIDADE_MS
+    const r = await limparTexto({
+      fetchFn: fetchDaRede,
+      apiKey: cfg.apiKey,
+      textoCru: raw,
+      contexto: ctx,
+      dicionario: dicionario.map((d) => d.replacement || d.term),
+      nomeUsuario: nomeUsuario(),
+      anterior: continua ? ultimoDitado.texto : ''
+    })
+    dlog(`limpeza: ${r.motivo} em ${r.ms}ms (app=${ctx?.app || '?'} categoria=${ctx?.categoria || '?'} palavras=${ctx?.palavras?.length ?? 0})`)
+    if (r.texto) text = aplicarDicionario(r.texto, dicionario)
+  }
+
+  let colar = text
+  if (ctx?.leuCampo) {
+    const nomes = [...(ctx.palavras || []), ...dicionario.map((d) => d.replacement || d.term), ...nomeUsuario().split(/\s+/)]
+    colar = ajustarParaColar(text, {
+      antes: ctx.antes,
+      depois: ctx.depois,
+      selecionado: ctx.selecionado,
+      nomesProprios: nomes.filter(Boolean),
+      mensagem: ctx.categoria === 'pessoal'
+    })
+  }
+  ultimoDitado = { texto: text, app: ctx?.app || '', em: Date.now() }
+  return { text, colar, senha: Boolean(ctx?.senha) }
+}
+
 async function entregarTexto(raw, { seq, wasCancelled }) {
-  const text = polish(raw, { dictionary: listDictionary(), snippets: listSnippets() })
+  const { text, colar, senha } = await prepararTexto(raw)
   if (!text) { rec.hideAnimated(); return }
 
   // REGRA DE OURO: salva ANTES de colar
@@ -71,20 +165,26 @@ async function entregarTexto(raw, { seq, wasCancelled }) {
 
   if (wasCancelled || abortado) {
     // Esc: não cola. Guarda pra Anular; se o Felipe já clicou Anular, cola agora.
-    if (wantUndo) { wantUndo = false; await pasteText(text); rec.hideAnimated() }
-    else { pendingUndo = text; setTimeout(() => { pendingUndo = null }, 6000) }
+    if (wantUndo) { wantUndo = false; await pasteText(colar); rec.hideAnimated() }
+    else { pendingUndo = colar; setTimeout(() => { pendingUndo = null }, 6000) }
     return
   }
 
-  const frontNow = await getFrontmostApp()
-  const pasted = await pasteText(text)
-  dlog('paste: targetApp=' + targetApp + ' frontNow=' + frontNow + ' pasted=' + pasted)
+  // Campo de senha: nunca cola ditado ali. Vira o card com "Copiar Ditado".
+  const pasted = senha ? false : await pasteText(colar)
+  dlog('paste: targetApp=' + targetApp + ' pasted=' + pasted + (senha ? ' (campo de senha)' : ''))
   if (pasted) {
-    rec.send('rec:result', { text, pasted: true })   // só confirma "Colado"
-    setTimeout(() => rec.hideAnimated(), 1100)
+    // Como no Wispr: colou, a pílula volta direto a ficar parada. O texto
+    // aparecendo no campo já é a confirmação.
+    rec.hideAnimated()
   } else {
-    rec.expandResult()                                // vira o card grande
-    rec.send('rec:result', { text, pasted: false })   // Copiar Ditado, persiste
+    // Sem campo pra colar (ou campo de senha). Como no Wispr, a pílula vira o
+    // cartão "Selecione um campo de texto primeiro"; diferente do Wispr, o
+    // texto já vai pro clipboard na hora (pedido do Felipe, 2026-11-17), então
+    // o cartão chega dizendo "Copiado!" e basta clicar no campo e dar Cmd+V.
+    clipboard.writeText(colar)
+    rec.expandResult()
+    rec.send('rec:result', { text: colar, pasted: false, copiado: true, senha })
   }
 }
 
@@ -202,7 +302,10 @@ async function finalizarGemini() {
   bloquearWebm = false
 
   if (raw && raw.trim()) {
+    // Se o webm ainda não chegou, ele vai chegar: fica marcado pra descarte.
+    descartarWebm = webmPendente === null
     webmPendente = null
+    dlog(`gemini entregou ${raw.length} caracteres`)
     try {
       await entregarTexto(raw, { seq, wasCancelled })
     } catch (err) {
@@ -215,7 +318,8 @@ async function finalizarGemini() {
 
   const guardado = webmPendente
   webmPendente = null
-  if (guardado) { processDictation(guardado); return }
+  if (guardado) { processDictation(guardado, { cancelado: wasCancelled }); return }
+  webmAtrasadoCancelado = wasCancelled
 
   // Nem texto nem áudio ainda: o webm pode estar a caminho (o renderer fecha o
   // MediaRecorder de forma assíncrona). Dá uma janela pra ele chegar sozinho —
@@ -273,7 +377,7 @@ app.whenReady().then(async () => {
   }
   ckpt('mic-async')
 
-  rec = createRecorderWindow({ getScale: () => getSetting('popupScale', 'm') })
+  rec = createRecorderWindow({ mostrarParada: () => getSetting('mostrarPilula', 'true') !== 'false' })
   ckpt('recorder-window')
   await ensureModel()
   ckpt('model')
@@ -289,9 +393,14 @@ app.whenReady().then(async () => {
     // ocupado podia adiá-las indefinidamente — era a causa do popup que não
     // aparecia. Trabalho lento vai para uma promessa aguardada mais tarde
     // (`appEmFoco`), nunca na frente do `rec.show()`.
-    onStart: (epoca) => {
+    onStart: (epoca, modo = 'ptt') => {
       recStartedAt = Date.now()
-      appEmFoco = getFrontmostApp().catch(() => '')
+      webmAtrasadoCancelado = false
+      descartarWebm = false
+      // O contexto já traz o nome do app; o osascript só roda se ele falhar.
+      contextoAtual = capturarContexto({ helperPath: helperPath() })
+      if (lerConfig().apiKey && getSetting('limpezaIA', 'true') === 'true') aquecerConexao(fetchDaRede)
+      appEmFoco = contextoAtual.then((c) => c?.app || getFrontmostApp()).catch(() => '')
       // Sobra do ditado anterior (troca de motor no meio, erro sem fim) não
       // pode continuar consumindo áudio do novo.
       abortarGemini()
@@ -308,8 +417,11 @@ app.whenReady().then(async () => {
       rec.show()
       // O payload diz ao renderer se ele deve, além do MediaRecorder de sempre,
       // abrir o AudioWorklet e mandar PCM por rt:audio.
-      rec.send('rec:start', { engine: motor })
+      rec.send('rec:start', { engine: motor, modo })
     },
+    // Toque duplo ou Fn+Espaço no meio do ditado: a pílula troca para o modo
+    // mãos livres (botões de cancelar e parar dos lados).
+    onModo: (modo) => rec.send('rec:modo', modo),
     onStop: () => {
       dlog('onStop')
       hotkeys.setRecordingState(false)
@@ -383,7 +495,10 @@ app.whenReady().then(async () => {
   // Gemini não entregar texto nenhum (ver finalizarGemini).
   ipcMain.on('rec:audio', (_e, buf) => {
     if (bloquearWebm) { webmPendente = buf; return }
-    processDictation(buf)
+    if (descartarWebm) { descartarWebm = false; dlog('webm de reserva descartado (o Gemini já entregou)'); return }
+    const cancelado = webmAtrasadoCancelado
+    webmAtrasadoCancelado = false
+    processDictation(buf, { cancelado })
   })
   ipcMain.on('rec:copy', (_e, text) => clipboard.writeText(text))
 
@@ -401,6 +516,10 @@ app.whenReady().then(async () => {
     if (pendingUndo) { const t = pendingUndo; pendingUndo = null; await pasteText(t); rec.hideAnimated() }
     else { wantUndo = true; rec.send('rec:phase', 'processing') } // transcrição ainda rodando: cola quando terminar
   })
+  // Pílula: o ponteiro entrou/saiu (liga o clique só nela) e o clique na
+  // pílula parada, que abre um ditado em mãos livres, como no Wispr.
+  ipcMain.on('rec:mouse', (_e, dentro) => rec.mouseDentro(!!dentro))
+  ipcMain.on('rec:clique-pilula', () => { if (machine.state() === 'idle') machine.handle('toggle') })
   ipcMain.on('rec:finish', () => { dlog('IPC rec:finish state=' + machine.state()); machine.stopExternally() })
   ipcMain.on('rec:cancel-hard', () => {
     dlog('IPC rec:cancel-hard state=' + machine.state())
@@ -442,11 +561,22 @@ app.whenReady().then(async () => {
     whisper = await startWhisperServerWithFallback({ language })
   }
 
-  ipcMain.handle('settings:get-all', () => ({
+  // Medidas que o renderer manda (tempo para abrir o microfone etc.) entram
+  // no mesmo log de diagnóstico do main.
+  ipcMain.on('rec:medida', (_e, texto) => dlog(String(texto).slice(0, 200)))
+  nativeTheme.themeSource = TEMA_ELECTRON[getSetting('tema', 'sistema')] || 'system'
+  ipcMain.handle('settings:get-all', () => todosAjustes())
+  todosAjustesFora = todosAjustes
+  function todosAjustes() { return {
     platform: process.platform,
+    versao: app.getVersion(),
+    tema: getSetting('tema', 'sistema'),
+    sons: getSetting('sons', 'true'),
+    limpezaIA: getSetting('limpezaIA', 'true'),
     language: getSetting('language', 'pt'),
     micDeviceId: getSetting('micDeviceId', ''),
     openAtLogin: getSetting('openAtLogin', 'true'),
+    mostrarPilula: getSetting('mostrarPilula', 'true'),
     popupScale: getSetting('popupScale', 'm'),
     waveColor: getSetting('waveColor', '#F4F2EC'),
     popupBg: getSetting('popupBg', '#221C33'),
@@ -454,13 +584,20 @@ app.whenReady().then(async () => {
     toggleShortcut: getSetting('toggleShortcut', DEFAULT_TOGGLE),
     pttShortcut: getSetting('pttShortcut', DEFAULT_PTT),
     transcriptionEngine: getSetting('transcriptionEngine', 'local')
-  }))
+  } }
   ipcMain.handle('settings:set', async (_e, key, value) => {
     if (key === 'language') {
       await restartWhisper(value)
       return
     }
     setSetting(key, value)
+    // A pílula guarda os ajustes em memória (o início do ditado não espera
+    // IPC); avisa ela da mudança.
+    rec?.send('settings:mudou', todosAjustes())
+    // Tema claro/escuro/sistema, igual ao do Wispr: o themeSource muda o
+    // prefers-color-scheme de todas as janelas, e o tema.css segue sozinho.
+    if (key === 'tema') nativeTheme.themeSource = TEMA_ELECTRON[value] || 'system'
+    if (key === 'mostrarPilula') { rec?.aplicarParada(); tray?.refazer() }
     if (key === 'openAtLogin' && app.isPackaged) {
       app.setLoginItemSettings({ openAtLogin: value === 'true' })
     }
@@ -470,6 +607,13 @@ app.whenReady().then(async () => {
     }
   })
   ipcMain.handle('history:list', () => listHistory(300))
+  ipcMain.handle('history:clear', () => { clearHistory(); tray?.updateLastTranscript(); return true })
+  ipcMain.handle('history:delete', (_e, id) => { deleteDictation(id); tray?.updateLastTranscript(); return true })
+  // Tela de Início: nome pra saudação + os três números do topo.
+  ipcMain.handle('hub:resumo', () => ({ nome: nomeUsuario().split(/\s+/)[0] || '', ...estatisticas() }))
+  ipcMain.handle('dict:list', () => listDictionary())
+  ipcMain.handle('dict:add', (_e, termo, troca) => addDictionaryWord(termo, troca))
+  ipcMain.handle('dict:remove', (_e, id) => { removeDictionaryWord(id); return true })
 
   // --- motor de transcrição (contrato com a tela de configurações) ---
   ipcMain.handle('motor:estado', () => estadoMotor())
@@ -499,9 +643,25 @@ app.whenReady().then(async () => {
   tray = createTray({
     getLast: () => getLastDictation(),
     getLanguage: () => getSetting('language', 'pt'),
+    getMic: () => getSetting('micDeviceId', ''),
     onLanguageChange: restartWhisper,
-    onOpenSettings: () => openSettingsWindow()
+    onMicChange: (id) => { setSetting('micDeviceId', id || ''); rec?.send('settings:mudou', todosAjustesFora()) },
+    onOpen: () => openSettingsWindow(),
+    onOpenSettings: () => openSettingsWindow('ajustes'),
+    onCopyLast: () => { const t = getLastDictation()?.text; if (t) clipboard.writeText(t) },
+    // O menu fecha e o foco volta pro app que estava na frente; a espera curta
+    // garante que o Cmd+V caia nele e não no menu ainda fechando.
+    onPasteLast: () => { const t = getLastDictation()?.text; if (t) setTimeout(() => pasteText(t), 250) },
+    getMostrarPilula: () => getSetting('mostrarPilula', 'true') !== 'false',
+    onMostrarPilula: (v) => {
+      setSetting('mostrarPilula', String(v))
+      rec?.send('settings:mudou', todosAjustes())
+      rec?.aplicarParada()
+    }
   })
+  ipcMain.on('rec:microfones', (_e, lista) => tray.setMicrofones(
+    (Array.isArray(lista) ? lista : []).slice(0, 20).map((m) => ({ deviceId: String(m.deviceId || ''), label: String(m.label || '').slice(0, 80) }))
+  ))
 
   ckpt('tray')
   if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: getSetting('openAtLogin', 'true') === 'true' })

@@ -382,6 +382,7 @@ const PTT_WIN32 = [
 // O parser Swift aceita 'ralt'/'lalt' como alias, para um settings.json vindo
 // de um PC não virar erro.
 const PTT_DARWIN = [
+  ['fn', 'fn / 🌐'],
   ['rcmd', '⌘ direito'],
   ['lcmd', '⌘ esquerdo'],
   ['rctrl', '⌃ direito'],
@@ -389,8 +390,7 @@ const PTT_DARWIN = [
   ['rshift', '⇧ direito'],
   ['lshift', '⇧ esquerdo'],
   ['ropt', '⌥ direito'],
-  ['lopt', '⌥ esquerdo'],
-  ['fn', 'fn / 🌐', 'A tecla globo pode abrir emojis ou o ditado da Apple ao ser solta. Ajustes > Teclado > “Pressionar a tecla globo para” = Não Fazer Nada.']
+  ['lopt', '⌥ esquerdo']
 ]
 
 export const ATALHOS = {
@@ -406,7 +406,7 @@ export const ATALHOS = {
     toggle: null,
     ptt: PTT_DARWIN,
     padraoToggle: 'fn+space',
-    padraoPtt: 'rcmd'
+    padraoPtt: 'fn'
   },
   win32: {
     capturaToggle: true,
@@ -417,3 +417,12 @@ export const ATALHOS = {
     padraoPtt: 'rctrl'
   }
 }
+
+// Nome curto da tecla de segurar, pra dicas na tela ("Segure fn e fale").
+export function rotuloPttCurto(spec, plataforma = 'darwin') {
+  const lista = (ATALHOS[plataforma] || ATALHOS.darwin).ptt
+  const achado = lista.find(([v]) => v === spec)
+  if (!achado) return spec || 'fn'
+  return spec === 'fn' ? 'fn' : achado[1]
+}
+

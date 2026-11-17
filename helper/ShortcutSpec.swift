@@ -284,7 +284,7 @@ enum PttSpec {
     // Apelidos para specs vindos de um PC ou escritos à mão.
     static let aliases = ["ralt": "ropt", "lalt": "lopt"]
 
-    static let padrao = "rcmd"
+    static let padrao = "fn"
 
     static func parse(_ spec: String) -> Tecla {
         let limpo = spec.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
